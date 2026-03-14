@@ -7,8 +7,10 @@ import { MarketDetailView } from './MarketDetailView';
 import { fetchMarkets, CATEGORIES } from '@/lib/polymarket-data';
 import type { PolymarketMarket, MarketCategory } from '@/lib/types';
 import { useLivePricesCtx } from '@/lib/LivePricesContext';
+import { usePolymarketSession } from '@/hooks/usePolymarketSession';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 
-type SortKey = 'yesPrice' | 'change' | 'volume' | 'liquidity' | 'closes' | null;
+type SortKey = 'yesPrice' | 'volume' | 'liquidity' | 'closes' | null;
 type SortDir = 'asc' | 'desc';
 
 function fmt(n: number) {
@@ -31,9 +33,12 @@ export function PolymarketIntelligenceTab() {
   const [selectedMarket, setSelectedMarket] = useState<PolymarketMarket | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<MarketCategory | 'All'>('All');
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('volume');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const livePrices = useLivePricesCtx();
+  const { status: sessionStatus, placeOrder, eoaAddress, safeAddress } = usePolymarketSession();
+  const handleNeedOnboarding = useCallback(() => setShowOnboarding(true), []);
 
   const loadMarkets = useCallback(() => {
     setLoading(true);
@@ -53,8 +58,7 @@ export function PolymarketIntelligenceTab() {
 
   useEffect(() => { loadMarkets(); }, [loadMarkets]);
 
-  // Only pass livePrices as a dep when we're actually sorting by price —
-  // this prevents the full filter+sort from recomputing on every WS tick
+  // Only pull live prices into sort deps when actually sorting by yes price
   const lpForSort = sortKey === 'yesPrice' ? livePrices : null;
 
   const filtered = useMemo(() => {
@@ -70,8 +74,6 @@ export function PolymarketIntelligenceTab() {
         if (sortKey === 'yesPrice') {
           va = lpForSort?.[a.conditionId]?.yes ?? a.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
           vb = lpForSort?.[b.conditionId]?.yes ?? b.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
-        } else if (sortKey === 'change') {
-          va = a.priceChange24h; vb = b.priceChange24h;
         } else if (sortKey === 'volume') {
           va = a.volume24h; vb = b.volume24h;
         } else if (sortKey === 'liquidity') {
@@ -95,7 +97,11 @@ export function PolymarketIntelligenceTab() {
   const handleSelectMarket = useCallback((market: PolymarketMarket) => setSelectedMarket(market), []);
 
   function handleSort(key: SortKey) {
-    if (sortKey === key) {
+    if (key === 'live') {
+      // Toggle live sort on/off
+      setSortKey(prev => prev === 'live' ? null : 'live');
+      setSortDir('desc');
+    } else if (sortKey === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     } else {
       setSortKey(key);
@@ -237,12 +243,19 @@ export function PolymarketIntelligenceTab() {
         </div>
       )}
 
+      <OnboardingFlow open={showOnboarding} onClose={() => setShowOnboarding(false)} />
+
       {/* ── Full-screen detail view ── */}
       {selectedMarket ? (
         <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--bg)' }}>
           <MarketDetailView
             market={selectedMarket}
             onBack={() => setSelectedMarket(null)}
+            sessionStatus={sessionStatus}
+            placeOrder={placeOrder}
+            eoaAddress={eoaAddress}
+            safeAddress={safeAddress}
+            onNeedOnboarding={handleNeedOnboarding}
           />
         </div>
       ) : (
@@ -251,16 +264,12 @@ export function PolymarketIntelligenceTab() {
           <table className="terminal-table" style={{ width: '100%' }}>
             <thead>
               <tr>
-                <th style={{ width: 32 }}>#</th>
                 <th>Market</th>
                 <th style={{ width: 80 }}>Category</th>
                 <th style={{ ...thStyle, width: 54 }} onClick={() => handleSort('yesPrice')}>
                   Yes <SortIcon col="yesPrice" sortKey={sortKey} sortDir={sortDir} />
                 </th>
                 <th style={{ width: 54 }}>No</th>
-                <th style={{ ...thStyle, width: 64 }} onClick={() => handleSort('change')}>
-                  Δ 24h <SortIcon col="change" sortKey={sortKey} sortDir={sortDir} />
-                </th>
                 <th style={{ ...thStyle, width: 72 }} onClick={() => handleSort('volume')}>
                   Vol 24h <SortIcon col="volume" sortKey={sortKey} sortDir={sortDir} />
                 </th>
@@ -271,17 +280,19 @@ export function PolymarketIntelligenceTab() {
                   Closes <SortIcon col="closes" sortKey={sortKey} sortDir={sortDir} />
                 </th>
                 <th style={{ width: 60 }}>Status</th>
+                <th style={{ width: 96 }}>Trade</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 12 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 10 }).map((__, j) => (
+                    {Array.from({ length: 9 }).map((__, j) => (
                       <td key={j}>
                         <div className="skeleton h-3 w-full" style={{ opacity: 0.5 }} />
                       </td>
                     ))}
+                    <td />
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
@@ -301,6 +312,11 @@ export function PolymarketIntelligenceTab() {
                     onClick={handleSelectMarket}
                     livePrice={livePrices[market.conditionId]}
                     index={idx}
+                    sessionStatus={sessionStatus}
+                    placeOrder={placeOrder}
+                    eoaAddress={eoaAddress}
+                    safeAddress={safeAddress}
+                    onNeedOnboarding={handleNeedOnboarding}
                   />
                 ))
               )}

@@ -6,8 +6,9 @@ import {
 } from 'recharts';
 import {
   ArrowLeft, RefreshCw, ExternalLink, TrendingUp, TrendingDown,
-  Zap, AlertTriangle, Eye,
+  Zap, AlertTriangle, Eye, Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   fetchMarketHistory,
   fetchOrderBook,
@@ -16,6 +17,8 @@ import {
 } from '@/lib/polymarket-data';
 import type { PolymarketMarket, PolymarketPricePoint } from '@/lib/types';
 import type { OrderBook, NormalizedTrade, AlphaTip, NewsArticle } from '@/lib/polymarket-data';
+import type { PolymarketSession } from '@/hooks/usePolymarketSession';
+import { recordTrade } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
 function fmt$(n: number) {
@@ -541,6 +544,28 @@ function AlphaTipsPanel({ conditionId }: { conditionId: string }) {
 
 // ── News panel ─────────────────────────────────────────────────────────────
 
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 2) return 'NOW';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+const SOURCE_ACCENT: Record<string, string> = {
+  reuters: '#f97316', bloomberg: '#8b5cf6', 'associated press': '#10b981',
+  bbc: '#facc15', cnn: '#ef4444', 'fox news': '#3b82f6',
+  politico: '#f43f5e', axios: '#6366f1', 'the guardian': '#22d3ee',
+  default: '#1652F0',
+};
+
+function getSourceColor(source?: string) {
+  if (!source) return SOURCE_ACCENT.default;
+  return SOURCE_ACCENT[source.toLowerCase()] ?? SOURCE_ACCENT.default;
+}
+
 function NewsPanel({ market }: { market: PolymarketMarket }) {
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -559,79 +584,227 @@ function NewsPanel({ market }: { market: PolymarketMarket }) {
   }, [market.conditionId, market.question]);
 
   return (
-    <Panel title="RELATED NEWS">
+    <div style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-card)' }}>
+      {/* Panel header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '5px 10px', borderBottom: '1px solid var(--border)',
+        backgroundColor: 'var(--bg-elevated)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full animate-pulse"
+            style={{ backgroundColor: '#22c55e', boxShadow: '0 0 5px #22c55e' }}
+          />
+          <span className="terminal-label">NEWS INTEL</span>
+          {!loading && articles.length > 0 && (
+            <span
+              className="font-mono text-[9px] font-bold px-1.5"
+              style={{
+                color: 'var(--accent)', border: '1px solid rgba(22,82,240,0.3)',
+                backgroundColor: 'rgba(22,82,240,0.08)',
+              }}
+            >
+              {articles.length} SIGNALS
+            </span>
+          )}
+        </div>
+        <span className="terminal-label" style={{ color: 'var(--text-tertiary)' }}>LIVE FEED</span>
+      </div>
+
+      {/* Loading: skeleton cards */}
       {loading ? (
-        <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span className="terminal-label">LOADING…</span>
+        <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="skeleton" style={{ height: 80 }} />
+          {[0, 1, 2].map(i => (
+            <div key={i} className="skeleton" style={{ height: 44, animationDelay: `${0.1 + i * 0.08}s` }} />
+          ))}
         </div>
       ) : error ? (
-        <div style={{ padding: '10px' }}>
-          <span className="terminal-label">
-            {error.includes('not configured') ? 'SET NEWS_API_KEY IN BACKEND/.ENV' : 'FAILED TO LOAD'}
+        <div style={{ padding: '14px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertTriangle className="h-3 w-3" style={{ color: '#ef4444' }} />
+          <span className="terminal-label" style={{ color: '#ef4444' }}>
+            {error.includes('not configured') ? 'SET NEWS_API_KEY IN BACKEND/.ENV' : 'FEED UNAVAILABLE'}
           </span>
         </div>
       ) : articles.length === 0 ? (
-        <div style={{ padding: '10px' }}>
-          <span className="terminal-label">NO RECENT NEWS</span>
+        <div style={{ padding: '14px 10px' }}>
+          <span className="terminal-label">NO SIGNALS DETECTED</span>
         </div>
       ) : (
         <div>
-          {articles.map((a, i) => (
-            <a
-              key={i}
-              href={a.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'flex',
-                gap: 8,
-                padding: '8px 10px',
-                borderBottom: '1px solid rgba(255,255,255,0.04)',
-                textDecoration: 'none',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-row-hover)')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+          {articles.map((a, i) => {
+            const isFeatured = i === 0;
+            const srcColor = getSourceColor(a.source);
+            const delay = `${i * 55}ms`;
+
+            return (
+              <a
+                key={i}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="news-article-enter"
+                style={{
+                  animationDelay: delay,
+                  display: 'flex',
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  textDecoration: 'none',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'background-color 0.1s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-row-hover)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                {/* Left accent bar */}
+                <div style={{
+                  width: isFeatured ? 3 : 2,
+                  flexShrink: 0,
+                  backgroundColor: isFeatured ? srcColor : 'rgba(255,255,255,0.06)',
+                  transition: 'background-color 0.2s',
+                }} />
+
+                {/* Content */}
+                <div style={{ flex: 1, padding: isFeatured ? '10px 10px 10px 10px' : '7px 10px', minWidth: 0 }}>
+
+                  {/* Source row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isFeatured ? 5 : 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {isFeatured && (
+                        <span
+                          className="font-mono text-[8px] font-bold tracking-widest px-1.5 py-0"
+                          style={{ backgroundColor: srcColor, color: '#000' }}
+                        >
+                          TOP
+                        </span>
+                      )}
+                      {a.source && (
+                        <span
+                          className="font-mono text-[9px] font-bold tracking-wide"
+                          style={{ color: srcColor, opacity: isFeatured ? 1 : 0.75 }}
+                        >
+                          {a.source.toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <span className="terminal-label">{timeAgo(a.publishedAt)}</span>
+                      <ExternalLink className="h-2 w-2 shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+                    </div>
+                  </div>
+
+                  {/* Headline */}
                   <p
-                    className="text-[11px] font-medium leading-snug"
-                    style={{ color: 'var(--text)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+                    className="leading-snug"
+                    style={{
+                      fontSize: isFeatured ? 12 : 11,
+                      fontWeight: isFeatured ? 600 : 500,
+                      color: isFeatured ? 'var(--text)' : 'var(--text-secondary)',
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: isFeatured ? 2 : 1,
+                      WebkitBoxOrient: 'vertical',
+                    }}
                   >
                     {a.title}
                   </p>
-                  <ExternalLink className="h-2.5 w-2.5 shrink-0 mt-0.5" style={{ color: 'var(--text-tertiary)' }} />
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 3 }}>
-                  {a.source && (
-                    <span className="font-mono text-[9px]" style={{ color: 'var(--accent)' }}>{a.source}</span>
+
+                  {/* Description — featured only */}
+                  {isFeatured && a.description && (
+                    <p
+                      className="text-[10px] mt-1.5 leading-relaxed"
+                      style={{
+                        color: 'var(--text-tertiary)',
+                        overflow: 'hidden',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                      }}
+                    >
+                      {a.description}
+                    </p>
                   )}
-                  {a.publishedAt && (
-                    <span className="terminal-label">{fmtDate(a.publishedAt)}</span>
-                  )}
                 </div>
-              </div>
-            </a>
-          ))}
+              </a>
+            );
+          })}
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
 
 // ── Market Detail View ─────────────────────────────────────────────────────
 
+const TRADE_SIZE = 10;
+
 interface MarketDetailViewProps {
   market: PolymarketMarket;
   onBack: () => void;
+  sessionStatus?: PolymarketSession['status'];
+  placeOrder?: PolymarketSession['placeOrder'];
+  eoaAddress?: PolymarketSession['eoaAddress'];
+  safeAddress?: PolymarketSession['safeAddress'];
+  onNeedOnboarding?: () => void;
 }
 
-export function MarketDetailView({ market, onBack }: MarketDetailViewProps) {
+export function MarketDetailView({
+  market,
+  onBack,
+  sessionStatus,
+  placeOrder,
+  eoaAddress,
+  safeAddress,
+  onNeedOnboarding,
+}: MarketDetailViewProps) {
   const yes = market.outcomes.find(o => o.name === 'Yes') ?? market.outcomes[0];
   const no = market.outcomes.find(o => o.name === 'No') ?? market.outcomes[1];
   const isUp = market.priceChange24h >= 0;
   const yesPrice = yes?.price ?? 0.5;
   const noPrice = no?.price ?? 0.5;
+
+  const [tradeSide, setTradeSide] = useState<'YES' | 'NO' | null>(null);
+  const [bought, setBought] = useState<'YES' | 'NO' | null>(null);
+  const [isTrading, setIsTrading] = useState(false);
+
+  async function handleBuy(side: 'YES' | 'NO') {
+    if (sessionStatus !== 'ready') { onNeedOnboarding?.(); return; }
+    if (tradeSide !== side) { setTradeSide(side); return; }
+    if (!placeOrder) return;
+
+    setIsTrading(true);
+    try {
+      const outcome = side === 'YES' ? yes : no;
+      const price = side === 'YES' ? yesPrice : noPrice;
+      const tokenId = outcome?.tokenId ?? market.conditionId;
+      const result = await placeOrder({ tokenId, side, price, size: TRADE_SIZE });
+      if (result) {
+        setBought(side);
+        setTradeSide(null);
+        toast.success('Order placed', {
+          description: `${TRADE_SIZE} ${side} shares @ ${Math.round(price * 100)}¢`,
+        });
+        if (eoaAddress) {
+          recordTrade({
+            orderId: result.orderId,
+            eoaAddress,
+            safeAddress: safeAddress ?? undefined,
+            marketId: market.conditionId,
+            marketQuestion: market.question,
+            tokenId,
+            side,
+            price,
+            size: TRADE_SIZE,
+          });
+        }
+      }
+    } catch (err) {
+      toast.error('Order failed', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setIsTrading(false);
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
@@ -716,12 +889,57 @@ export function MarketDetailView({ market, onBack }: MarketDetailViewProps) {
             {fmt$(market.liquidity)}
           </div>
         </div>
-        <div style={{ padding: '8px 16px' }}>
+        <div style={{ padding: '8px 16px', borderRight: '1px solid var(--border)' }}>
           <div className="terminal-label">CLOSES</div>
           <div className="metric text-[13px]" style={{ color: 'var(--text-secondary)' }}>
             {new Date(market.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
+
+        {/* Trade buttons */}
+        {market.active && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px' }}>
+            <button
+              disabled={isTrading}
+              onClick={() => handleBuy('YES')}
+              className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
+              style={
+                bought === 'YES'
+                  ? { backgroundColor: '#22c55e', color: '#000' }
+                  : tradeSide === 'YES'
+                  ? { backgroundColor: 'rgba(34,197,94,0.2)', color: '#22c55e', border: '1px solid #22c55e' }
+                  : { backgroundColor: 'rgba(34,197,94,0.08)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
+              }
+            >
+              {isTrading && tradeSide === 'YES'
+                ? <Loader2 className="inline h-3 w-3 animate-spin" />
+                : bought === 'YES' ? '✓ YES'
+                : tradeSide === 'YES' ? 'Confirm YES'
+                : `BUY YES ${(yesPrice * 100).toFixed(0)}¢`
+              }
+            </button>
+            <button
+              disabled={isTrading}
+              onClick={() => handleBuy('NO')}
+              className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
+              style={
+                bought === 'NO'
+                  ? { backgroundColor: '#ef4444', color: '#000' }
+                  : tradeSide === 'NO'
+                  ? { backgroundColor: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid #ef4444' }
+                  : { backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }
+              }
+            >
+              {isTrading && tradeSide === 'NO'
+                ? <Loader2 className="inline h-3 w-3 animate-spin" />
+                : bought === 'NO' ? '✓ NO'
+                : tradeSide === 'NO' ? 'Confirm NO'
+                : `BUY NO ${(noPrice * 100).toFixed(0)}¢`
+              }
+            </button>
+            <span className="terminal-label">$10 per trade</span>
+          </div>
+        )}
       </div>
 
       {/* ── Main content grid ── */}
