@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { LogIn, LogOut, Settings } from 'lucide-react';
+import { LogIn, LogOut, Settings, Copy, Check } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 
@@ -40,17 +40,30 @@ function LiveClock() {
 
 export function TopBar({ pageTitle, onSetupWallet }: TopBarProps) {
   const { login, logout, authenticated, user } = usePrivy();
-  const { status } = usePolymarketSession();
+  const { status, safeAddress, eoaAddress } = usePolymarketSession();
+  const [copied, setCopied] = useState(false);
 
   const embeddedWallet = user?.linkedAccounts?.find(
     (a) => a.type === 'wallet' && a.walletClientType === 'privy'
   ) as { address?: string } | undefined;
 
-  const displayAddress = embeddedWallet?.address
+  const displayAddress = safeAddress
+    ? `${safeAddress.slice(0, 6)}…${safeAddress.slice(-4)}`
+    : embeddedWallet?.address
     ? `${embeddedWallet.address.slice(0, 6)}…${embeddedWallet.address.slice(-4)}`
     : null;
 
-  const isSetupNeeded = authenticated && status !== 'ready';
+  const copyAddress = () => {
+    const addr = safeAddress ?? eoaAddress;
+    if (!addr) return;
+    navigator.clipboard.writeText(addr).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  // Hide during initial session load (status=idle while authenticated means still checking)
+  const isSetupNeeded = authenticated && status !== 'ready' && status !== 'idle';
 
   return (
     <header
@@ -126,20 +139,35 @@ export function TopBar({ pageTitle, onSetupWallet }: TopBarProps) {
           </button>
         ) : (
           <div className="flex items-center gap-1">
-            <div
-              className="flex h-6 items-center gap-1.5 px-2.5 font-mono text-[10px]"
+            <button
+              onClick={copyAddress}
+              title={safeAddress ? `Copy Safe address: ${safeAddress}` : 'Copy address'}
+              className="flex h-6 items-center gap-1.5 px-2.5 font-mono text-[10px] transition-colors"
               style={{
                 border: '1px solid var(--border)',
                 backgroundColor: 'var(--bg-elevated)',
                 color: 'var(--text-secondary)',
               }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderColor = 'var(--border-strong)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderColor = 'var(--border)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
             >
               <div
-                className="h-1.5 w-1.5"
+                className="h-1.5 w-1.5 shrink-0"
                 style={{ backgroundColor: status === 'ready' ? '#22c55e' : '#1652F0' }}
               />
               <span>{displayAddress ?? 'Connected'}</span>
-            </div>
+              {copied ? (
+                <Check className="h-2.5 w-2.5 text-green-400 shrink-0" />
+              ) : (
+                <Copy className="h-2.5 w-2.5 opacity-40 shrink-0" />
+              )}
+            </button>
             <button
               onClick={logout}
               title="Sign out"

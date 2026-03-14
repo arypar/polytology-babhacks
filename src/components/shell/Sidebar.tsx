@@ -5,7 +5,6 @@ import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 import {
   BarChart2,
   Blocks,
-  Rss,
   Activity,
   Users2,
   Database,
@@ -27,7 +26,6 @@ const NAV_ITEMS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'Intelligence', label: 'Intelligence', icon: BarChart2 },
   { id: 'Builder',      label: 'Builder',      icon: Blocks    },
   { id: 'Sources',      label: 'Sources',      icon: Database  },
-  { id: 'Feed',         label: 'Feed',         icon: Rss       },
   { id: 'Executing',    label: 'Executing',    icon: Activity  },
   { id: 'Users',        label: 'Users',        icon: Users2    },
 ];
@@ -113,7 +111,7 @@ export function Sidebar({ active, onChange, collapsed, onCollapsedChange }: Side
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2">
-        {NAV_ITEMS.map(({ id, label, icon: Icon, code }) => {
+        {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
           const isActive = active === id;
           return (
             <button

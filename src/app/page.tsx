@@ -6,7 +6,6 @@ import { Sidebar } from '@/components/shell/Sidebar';
 import type { TabId } from '@/components/shell/AppTabs';
 import { PolymarketIntelligenceTab } from '@/components/intelligence/PolymarketIntelligenceTab';
 import { AutonomousBuilderTab } from '@/components/builder/AutonomousBuilderTab';
-import { PolymarketFeedTab } from '@/components/feed/PolymarketFeedTab';
 import { ExecutingTradesTab } from '@/components/executing/ExecutingTradesTab';
 import { UsersTab } from '@/components/users/UsersTab';
 import { DataSourcesTab } from '@/components/data-sources/DataSourcesTab';
@@ -15,7 +14,7 @@ import { useStrategies, useExecutingTrades } from '@/lib/store';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 
 const TAB_STORAGE_KEY = 'polymarket-active-tab';
-const VALID_TABS: TabId[] = ['Intelligence', 'Builder', 'Sources', 'Feed', 'Executing', 'Users'];
+const VALID_TABS: TabId[] = ['Intelligence', 'Builder', 'Sources', 'Executing', 'Users'];
 const COLLAPSED_STORAGE_KEY = 'polymarket-sidebar-collapsed';
 
 function getPersistedTab(): TabId {
@@ -34,7 +33,6 @@ const PAGE_TITLES: Record<TabId, string> = {
   Intelligence: 'Markets',
   Builder: 'Strategy Builder',
   Sources: 'Data Sources',
-  Feed: 'Live Feed',
   Executing: 'Trades',
   Users: 'Users',
 };
@@ -85,7 +83,7 @@ export default function Home() {
         <main
           className="flex-1"
           style={
-            tab === 'Intelligence' || tab === 'Feed'
+            tab === 'Intelligence'
               ? { overflow: 'hidden', display: 'flex', flexDirection: 'column' }
               : { padding: '12px 16px' }
           }
@@ -100,7 +98,6 @@ export default function Home() {
               onNavigateToSources={() => handleTabChange('Sources')}
             />
           )}
-          {tab === 'Feed' && <PolymarketFeedTab />}
           {tab === 'Executing' && (
             <ExecutingTradesTab
               trades={trades}
