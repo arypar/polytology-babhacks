@@ -2,15 +2,21 @@
 
 import { useState, useCallback } from 'react';
 import { TopBar } from '@/components/shell/TopBar';
-import { AppTabs, type TabId } from '@/components/shell/AppTabs';
+import { Sidebar } from '@/components/shell/Sidebar';
+import type { TabId } from '@/components/shell/AppTabs';
 import { PolymarketIntelligenceTab } from '@/components/intelligence/PolymarketIntelligenceTab';
 import { AutonomousBuilderTab } from '@/components/builder/AutonomousBuilderTab';
 import { PolymarketFeedTab } from '@/components/feed/PolymarketFeedTab';
 import { ExecutingTradesTab } from '@/components/executing/ExecutingTradesTab';
+import { UsersTab } from '@/components/users/UsersTab';
+import { DataSourcesTab } from '@/components/data-sources/DataSourcesTab';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { useStrategies, useExecutingTrades } from '@/lib/store';
+import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 
 const TAB_STORAGE_KEY = 'polymarket-active-tab';
-const VALID_TABS: TabId[] = ['Intelligence', 'Builder', 'Feed', 'Executing'];
+const VALID_TABS: TabId[] = ['Intelligence', 'Builder', 'Sources', 'Feed', 'Executing', 'Users'];
+const COLLAPSED_STORAGE_KEY = 'polymarket-sidebar-collapsed';
 
 function getPersistedTab(): TabId {
   if (typeof window === 'undefined') return 'Intelligence';
@@ -19,25 +25,71 @@ function getPersistedTab(): TabId {
   return 'Intelligence';
 }
 
+function getPersistedCollapsed(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(COLLAPSED_STORAGE_KEY) === 'true';
+}
+
+const PAGE_TITLES: Record<TabId, string> = {
+  Intelligence: 'Markets',
+  Builder: 'Strategy Builder',
+  Sources: 'Data Sources',
+  Feed: 'Live Feed',
+  Executing: 'Trades',
+  Users: 'Users',
+};
+
 export default function Home() {
   const [tab, setTab] = useState<TabId>(getPersistedTab);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(getPersistedCollapsed);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const handleTabChange = useCallback((next: TabId) => {
     setTab(next);
     localStorage.setItem(TAB_STORAGE_KEY, next);
   }, []);
 
-  const { strategies, addStrategy, updateStrategy, removeStrategy } = useStrategies();
-  const { trades, runtimes, updateTradeStatus, pauseStrategy, stopStrategy } = useExecutingTrades();
+  const handleCollapseChange = useCallback((c: boolean) => {
+    setSidebarCollapsed(c);
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, String(c));
+  }, []);
+
+  const { eoaAddress } = usePolymarketSession();
+  const { strategies, addStrategy, updateStrategy, removeStrategy } = useStrategies(eoaAddress);
+  const { trades, runtimes, usingRealData, updateTradeStatus, pauseStrategy, stopStrategy } = useExecutingTrades(eoaAddress, tab === 'Executing');
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="flex flex-col min-h-screen">
-        <TopBar>
-          <AppTabs active={tab} onChange={handleTabChange} />
-        </TopBar>
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+      <Sidebar
+        active={tab}
+        onChange={handleTabChange}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={handleCollapseChange}
+      />
 
-        <main className={tab === 'Feed' ? 'flex-1 overflow-hidden' : 'mx-auto w-full max-w-7xl px-6 py-8 flex-1'}>
+      {/* Main area — offset by sidebar */}
+      <div
+        className="flex flex-col transition-all duration-200"
+        style={{
+          marginLeft: sidebarCollapsed ? '3rem' : '200px',
+          minHeight: '100vh',
+        }}
+      >
+        <TopBar
+          pageTitle={PAGE_TITLES[tab]}
+          onSetupWallet={() => setShowOnboarding(true)}
+        />
+
+        <OnboardingFlow open={showOnboarding} onClose={() => setShowOnboarding(false)} />
+
+        <main
+          className="flex-1"
+          style={
+            tab === 'Intelligence' || tab === 'Feed'
+              ? { overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+              : { padding: '12px 16px' }
+          }
+        >
           {tab === 'Intelligence' && <PolymarketIntelligenceTab />}
           {tab === 'Builder' && (
             <AutonomousBuilderTab
@@ -45,6 +97,7 @@ export default function Home() {
               onAddStrategy={addStrategy}
               onUpdateStrategy={updateStrategy}
               onRemoveStrategy={removeStrategy}
+              onNavigateToSources={() => handleTabChange('Sources')}
             />
           )}
           {tab === 'Feed' && <PolymarketFeedTab />}
@@ -52,11 +105,14 @@ export default function Home() {
             <ExecutingTradesTab
               trades={trades}
               runtimes={runtimes}
+              usingRealData={usingRealData}
               onUpdateTradeStatus={updateTradeStatus}
               onPauseStrategy={pauseStrategy}
               onStopStrategy={stopStrategy}
             />
           )}
+          {tab === 'Sources' && <DataSourcesTab />}
+          {tab === 'Users' && <UsersTab />}
         </main>
       </div>
     </div>
