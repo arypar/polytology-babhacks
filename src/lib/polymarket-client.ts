@@ -8,7 +8,15 @@ export type { ApiKeyCreds };
 
 export const POLYGON_CHAIN_ID = 137;
 export const CLOB_API_URL = 'https://clob.polymarket.com';
-export const RELAYER_URL = 'https://relayer.polymarket.com';
+export const RELAYER_URL = 'https://relayer-v2.polymarket.com';
+
+// Proxy URL: relay client requests are routed through our Next.js API to avoid
+// CORS issues when calling the relayer directly from the browser.
+function getRelayerProxyUrl(): string {
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  return `${origin}/api/relayer`;
+}
 
 // Contract addresses on Polygon
 export const CONTRACTS = {
@@ -55,9 +63,9 @@ export function createClobClientL1(walletClient: WalletClient): ClobClient {
  * Uses the server-side signing endpoint so builder credentials stay secure.
  */
 export function createRelayClient(walletClient: WalletClient): RelayClient {
-  const builderConfig = new ClientBuilderConfig();
+  const builderConfig = makeBuilderConfig();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new RelayClient(RELAYER_URL, POLYGON_CHAIN_ID, walletClient as any, builderConfig);
+  return new RelayClient(getRelayerProxyUrl(), POLYGON_CHAIN_ID, walletClient as any, builderConfig as any);
 }
 
 /**

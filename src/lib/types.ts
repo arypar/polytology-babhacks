@@ -11,8 +11,9 @@ export type MarketCategory =
   | 'Other';
 
 export interface PolymarketOutcome {
-  name: string;   // e.g. "Yes" | "No" or team names
-  price: number;  // 0–1 probability
+  name: string;      // e.g. "Yes" | "No" or team names
+  price: number;     // 0–1 probability
+  tokenId?: string;  // CLOB outcome token ID — required to place orders
 }
 
 export interface PolymarketMarket {
@@ -87,6 +88,18 @@ export interface AutonomousStrategy {
   marketQuestion?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+// ── Custom data sources ───────────────────────────────────────
+
+export interface CustomDataSource {
+  id: string;
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+  valuePath: string;
+  description: string;
+  refreshMs: number;
 }
 
 // ── Executing trades ──────────────────────────────────────────

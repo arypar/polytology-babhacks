@@ -12,7 +12,7 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
-async function apiGet<T>(path: string): Promise<T | null> {
+async function apiFetch<T>(path: string): Promise<T | null> {
   try {
     const res = await fetch(`${API_BASE}${path}`);
     if (!res.ok) return null;
@@ -22,16 +22,15 @@ async function apiGet<T>(path: string): Promise<T | null> {
   }
 }
 
-async function apiPost(path: string, body: unknown): Promise<boolean> {
+async function apiPost(path: string, body: unknown): Promise<Response | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    return await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    return res.ok;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -57,185 +56,214 @@ async function apiDelete(path: string): Promise<boolean> {
   }
 }
 
+// ── Trade recording ───────────────────────────────────────────
+
+export interface RecordTradeParams {
+  orderId?: string;
+  eoaAddress: string;
+  safeAddress?: string;
+  strategyId?: string;
+  marketId: string;
+  marketQuestion?: string;
+  tokenId: string;
+  side: 'YES' | 'NO';
+  price: number;
+  size: number;
+  negRisk?: boolean;
+}
+
+export async function recordTrade(params: RecordTradeParams): Promise<void> {
+  await apiPost('/api/trades', params);
+}
+
 // ── Strategy store ────────────────────────────────────────────
 
-const STRATEGIES_KEY = 'pm-strategies';
+// localStorage cache is scoped per EOA so different users on the same browser
+// don't share strategies.
+function cacheKey(eoa: string) { return `pm-strategies-${eoa.toLowerCase()}`; }
 
-function loadStrategies(): AutonomousStrategy[] {
-  if (typeof window === 'undefined') return [];
+function cacheStrategies(eoa: string, strategies: AutonomousStrategy[]) {
+  if (typeof window === 'undefined' || !eoa) return;
+  try { localStorage.setItem(cacheKey(eoa), JSON.stringify(strategies)); } catch { /* ignore */ }
+}
+
+function loadCachedStrategies(eoa: string): AutonomousStrategy[] {
+  if (typeof window === 'undefined' || !eoa) return [];
   try {
-    const raw = localStorage.getItem(STRATEGIES_KEY);
+    const raw = localStorage.getItem(cacheKey(eoa));
     return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-function saveStrategies(strategies: AutonomousStrategy[]) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STRATEGIES_KEY, JSON.stringify(strategies));
-}
+export function useStrategies(eoaAddress?: string | null) {
+  const eoa = eoaAddress?.toLowerCase() ?? '';
 
-export function useStrategies() {
-  const [strategies, setStrategies] = useState<AutonomousStrategy[]>(loadStrategies);
+  const [strategies, setStrategies] = useState<AutonomousStrategy[]>(() =>
+    eoa ? loadCachedStrategies(eoa) : []
+  );
+  const [loading, setLoading] = useState(true);
+
+  // Re-fetch whenever the EOA changes (e.g. user logs in after mount)
+  useEffect(() => {
+    if (!eoa) { setStrategies([]); setLoading(false); return; }
+
+    // Show cached data immediately while the server fetch completes
+    setStrategies(loadCachedStrategies(eoa));
+    setLoading(true);
+
+    let cancelled = false;
+    apiFetch<AutonomousStrategy[]>(`/api/strategies?eoa=${eoa}`).then((data) => {
+      if (cancelled || !data) { setLoading(false); return; }
+      setStrategies(data);
+      cacheStrategies(eoa, data);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [eoa]);
 
   const addStrategy = useCallback((strategy: AutonomousStrategy) => {
+    if (!eoa) return;
     setStrategies(prev => {
       const next = [strategy, ...prev];
-      saveStrategies(next);
+      cacheStrategies(eoa, next);
       return next;
     });
-    apiPost('/api/strategies', strategy);
-  }, []);
+    apiPost('/api/strategies', { ...strategy, eoaAddress: eoa });
+  }, [eoa]);
 
   const updateStrategy = useCallback((id: string, updates: Partial<AutonomousStrategy>) => {
+    if (!eoa) return;
     setStrategies(prev => {
       const next = prev.map(s => s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s);
-      saveStrategies(next);
+      cacheStrategies(eoa, next);
       return next;
     });
-    apiPatch(`/api/strategies/${id}`, updates);
-  }, []);
+    apiPatch(`/api/strategies/${id}?eoa=${eoa}`, updates);
+  }, [eoa]);
 
   const removeStrategy = useCallback((id: string) => {
+    if (!eoa) return;
     setStrategies(prev => {
       const next = prev.filter(s => s.id !== id);
-      saveStrategies(next);
+      cacheStrategies(eoa, next);
       return next;
     });
-    apiDelete(`/api/strategies/${id}`);
-  }, []);
+    apiDelete(`/api/strategies/${id}?eoa=${eoa}`);
+  }, [eoa]);
 
   const updateBlocks = useCallback((id: string, blocks: StrategyBlock[]) => {
+    if (!eoa) return;
     setStrategies(prev => {
       const next = prev.map(s => s.id === id ? { ...s, blocks, updatedAt: Date.now() } : s);
-      saveStrategies(next);
+      cacheStrategies(eoa, next);
       return next;
     });
-  }, []);
+    apiPatch(`/api/strategies/${id}?eoa=${eoa}`, { blocks });
+  }, [eoa]);
 
-  return { strategies, addStrategy, updateStrategy, removeStrategy, updateBlocks };
+  return { strategies, loading, addStrategy, updateStrategy, removeStrategy, updateBlocks };
 }
 
-// ── Executing trades store ────────────────────────────────────
+// ── DB trade row shape (from backend) ────────────────────────
 
-const MOCK_RUNTIMES: StrategyRuntime[] = [
-  {
-    strategyId: 'demo-1',
-    strategyName: 'Trump 2024 Momentum',
-    status: 'running',
-    tradesExecuted: 14,
-    totalDeployed: 2400,
-    realizedPnl: 312.50,
-    unrealizedPnl: 88.20,
-    winRate: 0.71,
-    startedAt: Date.now() - 1000 * 60 * 60 * 8,
-    lastTradeAt: Date.now() - 1000 * 60 * 4,
-  },
-  {
-    strategyId: 'demo-2',
-    strategyName: 'BTC 100k by EOY',
-    status: 'running',
-    tradesExecuted: 6,
-    totalDeployed: 800,
-    realizedPnl: -42.00,
-    unrealizedPnl: 124.00,
-    winRate: 0.50,
-    startedAt: Date.now() - 1000 * 60 * 60 * 2,
-    lastTradeAt: Date.now() - 1000 * 60 * 22,
-  },
-  {
-    strategyId: 'demo-3',
-    strategyName: 'Fed Rate Cut Fade',
-    status: 'paused',
-    tradesExecuted: 3,
-    totalDeployed: 500,
-    realizedPnl: 95.00,
-    unrealizedPnl: 0,
-    winRate: 1.0,
-    startedAt: Date.now() - 1000 * 60 * 60 * 24,
-    lastTradeAt: Date.now() - 1000 * 60 * 60 * 3,
-  },
-];
+interface DbTrade {
+  id: string;
+  order_id: string | null;
+  eoa_address: string;
+  safe_address: string | null;
+  strategy_id: string | null;
+  market_id: string;
+  market_question: string | null;
+  token_id: string;
+  side: string;
+  price: number;
+  size: number;
+  status: string;
+  pnl: number;
+  neg_risk: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
-const MOCK_TRADES: ExecutingTrade[] = [
-  {
-    id: 't1',
-    strategyId: 'demo-1',
-    strategyName: 'Trump 2024 Momentum',
-    marketId: 'mkt-1',
-    marketQuestion: 'Will Donald Trump win the 2024 US Presidential Election?',
-    side: 'YES',
-    shares: 250,
-    entryPrice: 0.61,
-    currentPrice: 0.72,
-    status: 'filled',
-    timestamp: Date.now() - 1000 * 60 * 30,
-    pnl: 27.50,
-  },
-  {
-    id: 't2',
-    strategyId: 'demo-1',
-    strategyName: 'Trump 2024 Momentum',
-    marketId: 'mkt-1',
-    marketQuestion: 'Will Donald Trump win the 2024 US Presidential Election?',
-    side: 'YES',
-    shares: 150,
-    entryPrice: 0.68,
-    currentPrice: 0.72,
-    status: 'filled',
-    timestamp: Date.now() - 1000 * 60 * 10,
-    pnl: 6.00,
-  },
-  {
-    id: 't3',
-    strategyId: 'demo-2',
-    strategyName: 'BTC 100k by EOY',
-    marketId: 'mkt-2',
-    marketQuestion: 'Will Bitcoin reach $100,000 by end of 2024?',
-    side: 'YES',
-    shares: 200,
-    entryPrice: 0.44,
-    currentPrice: 0.59,
-    status: 'filled',
-    timestamp: Date.now() - 1000 * 60 * 60,
-    pnl: 30.00,
-  },
-  {
-    id: 't4',
-    strategyId: 'demo-3',
-    strategyName: 'Fed Rate Cut Fade',
-    marketId: 'mkt-3',
-    marketQuestion: 'Will the Fed cut rates in September 2024?',
-    side: 'NO',
-    shares: 100,
-    entryPrice: 0.38,
-    currentPrice: 0.38,
-    status: 'filled',
-    timestamp: Date.now() - 1000 * 60 * 60 * 3,
-    pnl: 0,
-  },
-  {
-    id: 't5',
-    strategyId: 'demo-1',
-    strategyName: 'Trump 2024 Momentum',
-    marketId: 'mkt-4',
-    marketQuestion: 'Will there be a US recession in 2024?',
-    side: 'NO',
-    shares: 300,
-    entryPrice: 0.72,
-    currentPrice: 0.68,
-    status: 'pending',
-    timestamp: Date.now() - 1000 * 60 * 2,
-    pnl: -12.00,
-  },
-];
+function dbTradeToExecutingTrade(t: DbTrade, strategyName?: string): ExecutingTrade {
+  return {
+    id: t.id,
+    strategyId: t.strategy_id ?? 'manual',
+    strategyName: strategyName ?? 'Manual Trade',
+    marketId: t.market_id,
+    marketQuestion: t.market_question ?? t.market_id,
+    side: t.side as 'YES' | 'NO',
+    shares: t.size,
+    entryPrice: t.price,
+    currentPrice: t.price,   // will be updated by live simulation
+    status: t.status as TradeStatus,
+    timestamp: new Date(t.created_at).getTime(),
+    pnl: t.pnl,
+  };
+}
 
-export function useExecutingTrades() {
-  const [trades, setTrades] = useState<ExecutingTrade[]>(MOCK_TRADES);
-  const [runtimes, setRuntimes] = useState<StrategyRuntime[]>(MOCK_RUNTIMES);
+function computeRuntimes(
+  strategies: AutonomousStrategy[],
+  trades: ExecutingTrade[]
+): StrategyRuntime[] {
+  const activeStrategies = strategies.filter(s => s.enabled);
+  if (activeStrategies.length === 0) return [];
 
-  // Simulate live price updates
+  return activeStrategies.map(s => {
+    const stratTrades = trades.filter(t => t.strategyId === s.id && t.status === 'filled');
+    const totalDeployed = stratTrades.reduce((sum, t) => sum + t.entryPrice * t.shares, 0);
+    const realizedPnl = stratTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+    const wins = stratTrades.filter(t => (t.pnl ?? 0) > 0).length;
+    return {
+      strategyId: s.id,
+      strategyName: s.name,
+      status: 'running' as StrategyStatus,
+      tradesExecuted: stratTrades.length,
+      totalDeployed,
+      realizedPnl,
+      unrealizedPnl: 0,
+      winRate: stratTrades.length > 0 ? wins / stratTrades.length : 0,
+      startedAt: s.createdAt,
+      lastTradeAt: stratTrades.length > 0
+        ? Math.max(...stratTrades.map(t => t.timestamp))
+        : undefined,
+    };
+  });
+}
+
+
+export function useExecutingTrades(eoaAddress?: string | null) {
+  const [trades, setTrades] = useState<ExecutingTrade[]>([]);
+  const [runtimes, setRuntimes] = useState<StrategyRuntime[]>([]);
+  const [usingRealData, setUsingRealData] = useState(false);
+
+  // Fetch real strategies + trades when we have an EOA address
+  useEffect(() => {
+    if (!eoaAddress) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const [dbTrades, dbStrategies] = await Promise.all([
+        apiFetch<DbTrade[]>(`/api/trades?eoa=${eoaAddress}&limit=100`),
+        apiFetch<AutonomousStrategy[]>(`/api/strategies?eoa=${eoaAddress}`),
+      ]);
+
+      if (cancelled) return;
+
+      if (dbTrades && dbTrades.length > 0) {
+        const strategyMap = new Map((dbStrategies ?? []).map(s => [s.id, s.name]));
+        const mapped = dbTrades.map(t => dbTradeToExecutingTrade(t, strategyMap.get(t.strategy_id ?? '') ?? undefined));
+        setTrades(mapped);
+        setRuntimes(computeRuntimes(dbStrategies ?? [], mapped));
+        setUsingRealData(true);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [eoaAddress]);
+
+  // Live price simulation for open/filled positions
   useEffect(() => {
     const interval = setInterval(() => {
       setTrades(prev =>
@@ -253,7 +281,10 @@ export function useExecutingTrades() {
 
   const updateTradeStatus = useCallback((id: string, status: TradeStatus) => {
     setTrades(prev => prev.map(t => t.id === id ? { ...t, status } : t));
-  }, []);
+    if (usingRealData) {
+      apiPatch(`/api/trades/${id}`, { status });
+    }
+  }, [usingRealData]);
 
   const pauseStrategy = useCallback((strategyId: string) => {
     setRuntimes(prev =>
@@ -273,5 +304,5 @@ export function useExecutingTrades() {
     );
   }, []);
 
-  return { trades, runtimes, updateTradeStatus, pauseStrategy, stopStrategy, resumeStrategy };
+  return { trades, runtimes, usingRealData, updateTradeStatus, pauseStrategy, stopStrategy, resumeStrategy };
 }
