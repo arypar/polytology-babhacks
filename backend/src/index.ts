@@ -8,9 +8,11 @@ import actionsRouter from './routes/actions.js';
 import testRouter from './routes/test.js';
 import dismissedSuggestionsRouter from './routes/dismissed-suggestions.js';
 import polymarketRouter from './routes/polymarket.js';
+import usersRouter from './routes/users.js';
 import strategiesRouter from './routes/strategies.js';
 import tradesRouter from './routes/trades.js';
 import credentialsRouter from './routes/credentials.js';
+import fundingRouter from './routes/funding.js';
 import { setupWebSocket } from './lib/ws-server.js';
 
 const app = express();
@@ -44,9 +46,11 @@ app.use('/api', actionsRouter);
 app.use('/', testRouter);
 app.use('/api', dismissedSuggestionsRouter);
 app.use('/polymarket', polymarketRouter);
+app.use('/polymarket', usersRouter);
 app.use('/api', strategiesRouter);
 app.use('/api', tradesRouter);
 app.use('/api', credentialsRouter);
+app.use('/api', fundingRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
