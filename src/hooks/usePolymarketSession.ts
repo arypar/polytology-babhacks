@@ -19,6 +19,7 @@ export type SessionStatus =
   | 'idle'
   | 'wallet-ready'
   | 'safe-deploying'
+  | 'safe-deployed'
   | 'approving'
   | 'ready'
   | 'error';
@@ -191,8 +192,8 @@ export function usePolymarketSession(): PolymarketSession {
         const stored = await fetchStoredCredentials(eoa);
         if (cancelled) return;
 
-        const safeDeployed = stored?.safe_deployed ?? false;
-        const tokensApproved = stored?.tokens_approved ?? false;
+        let safeDeployed = stored?.safe_deployed ?? false;
+        let tokensApproved = stored?.tokens_approved ?? false;
 
         let creds: ApiKeyCreds | null = null;
         if (stored?.api_key) {
@@ -206,10 +207,16 @@ export function usePolymarketSession(): PolymarketSession {
         } else {
           // DB miss — try localStorage cache
           creds = loadCredsLocal(eoa);
+          // Creds are only written to localStorage after approveTokens() succeeds,
+          // so if they exist the safe was deployed and tokens were approved.
+          if (creds) {
+            safeDeployed = true;
+            tokensApproved = true;
+          }
         }
 
-        if (!creds || !safeDeployed || !tokensApproved) {
-          setStatus('wallet-ready');
+        if (!creds || !tokensApproved) {
+          setStatus(safeDeployed ? 'safe-deployed' : 'wallet-ready');
           return;
         }
 
@@ -259,7 +266,7 @@ export function usePolymarketSession(): PolymarketSession {
     if (eoaAddress) {
       await patchCredentials(eoaAddress, { safeAddress, safeDeployed: true });
     }
-    setStatus('wallet-ready');
+    setStatus('safe-deployed');
   }, [safeAddress, eoaAddress]);
 
   const approveTokens = useCallback(async () => {
