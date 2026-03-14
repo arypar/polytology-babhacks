@@ -44,9 +44,71 @@ export interface PolymarketSession {
   reset: () => void;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+
+// ── DB-backed helpers ─────────────────────────────────────────
+
+interface StoredCredentials {
+  eoa_address: string;
+  api_key: string;
+  api_secret: string;
+  api_passphrase: string;
+  safe_address: string | null;
+  safe_deployed: boolean;
+  tokens_approved: boolean;
+}
+
+async function fetchStoredCredentials(eoa: string): Promise<StoredCredentials | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/credentials/${eoa.toLowerCase()}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function saveCredentials(params: {
+  eoaAddress: string;
+  apiKey: string;
+  apiSecret: string;
+  apiPassphrase: string;
+  safeAddress?: string | null;
+  safeDeployed?: boolean;
+  tokensApproved?: boolean;
+}): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/credentials`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+  } catch (e) {
+    console.warn('[session] failed to save credentials to backend:', e);
+  }
+}
+
+async function patchCredentials(eoa: string, updates: Partial<{
+  safeAddress: string;
+  safeDeployed: boolean;
+  tokensApproved: boolean;
+}>): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/credentials/${eoa.toLowerCase()}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+  } catch (e) {
+    console.warn('[session] failed to patch credentials:', e);
+  }
+}
+
+// ── localStorage fallback (used as fast cache alongside DB) ──
+
 const CREDS_KEY = (eoa: string) => `polytology_creds_${eoa.toLowerCase()}`;
 
-function loadCreds(eoa: string): ApiKeyCreds | null {
+function loadCredsLocal(eoa: string): ApiKeyCreds | null {
   try {
     const raw = localStorage.getItem(CREDS_KEY(eoa));
     return raw ? JSON.parse(raw) : null;
@@ -55,39 +117,13 @@ function loadCreds(eoa: string): ApiKeyCreds | null {
   }
 }
 
-function saveCreds(eoa: string, creds: ApiKeyCreds) {
+function saveCredsLocal(eoa: string, creds: ApiKeyCreds) {
   try {
     localStorage.setItem(CREDS_KEY(eoa), JSON.stringify(creds));
   } catch { /* ignore */ }
 }
 
-function loadSafeDeployed(safeAddress: string): boolean {
-  try {
-    return localStorage.getItem(`safe_deployed_${safeAddress.toLowerCase()}`) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markSafeDeployed(safeAddress: string) {
-  try {
-    localStorage.setItem(`safe_deployed_${safeAddress.toLowerCase()}`, '1');
-  } catch { /* ignore */ }
-}
-
-function loadTokensApproved(safeAddress: string): boolean {
-  try {
-    return localStorage.getItem(`tokens_approved_${safeAddress.toLowerCase()}`) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markTokensApproved(safeAddress: string) {
-  try {
-    localStorage.setItem(`tokens_approved_${safeAddress.toLowerCase()}`, '1');
-  } catch { /* ignore */ }
-}
+// ── Hook ──────────────────────────────────────────────────────
 
 export function usePolymarketSession(): PolymarketSession {
   const { login, logout: privyLogout, authenticated } = usePrivy();
@@ -149,19 +185,35 @@ export function usePolymarketSession(): PolymarketSession {
         const wc = await getViemWalletClient();
         if (!wc || cancelled) return;
         walletClientRef.current = wc;
-
         relayClientRef.current = createRelayClient(wc);
 
-        const storedCreds = loadCreds(eoa);
-        const safeDeployed = loadSafeDeployed(safe);
-        const tokensApproved = loadTokensApproved(safe);
+        // Try DB first, fall back to localStorage
+        const stored = await fetchStoredCredentials(eoa);
+        if (cancelled) return;
 
-        if (!storedCreds || !safeDeployed || !tokensApproved) {
+        const safeDeployed = stored?.safe_deployed ?? false;
+        const tokensApproved = stored?.tokens_approved ?? false;
+
+        let creds: ApiKeyCreds | null = null;
+        if (stored?.api_key) {
+          creds = {
+            key: stored.api_key,
+            secret: stored.api_secret,
+            passphrase: stored.api_passphrase,
+          };
+          // Also refresh localStorage cache
+          saveCredsLocal(eoa, creds);
+        } else {
+          // DB miss — try localStorage cache
+          creds = loadCredsLocal(eoa);
+        }
+
+        if (!creds || !safeDeployed || !tokensApproved) {
           setStatus('wallet-ready');
           return;
         }
 
-        clobClientRef.current = createClobClient(wc, storedCreds);
+        clobClientRef.current = createClobClient(wc, creds);
         setStatus('ready');
       } catch (e) {
         if (!cancelled) {
@@ -191,14 +243,24 @@ export function usePolymarketSession(): PolymarketSession {
         '120',
         3000
       );
-      markSafeDeployed(safeAddress);
-      setStatus('wallet-ready');
     } catch (e) {
-      setError(String(e));
-      setStatus('error');
-      throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'safe already deployed!') {
+        // Safe is already live on-chain — treat as success and fall through
+        console.log('[deploySafe] safe already deployed on-chain, skipping deploy');
+      } else {
+        setError(msg);
+        setStatus('error');
+        throw e;
+      }
     }
-  }, [safeAddress]);
+
+    // Reached here either via successful deploy or already-deployed path
+    if (eoaAddress) {
+      await patchCredentials(eoaAddress, { safeAddress, safeDeployed: true });
+    }
+    setStatus('wallet-ready');
+  }, [safeAddress, eoaAddress]);
 
   const approveTokens = useCallback(async () => {
     if (!relayClientRef.current || !safeAddress) throw new Error('No relay client');
@@ -212,7 +274,7 @@ export function usePolymarketSession(): PolymarketSession {
         'Set Polymarket token approvals'
       );
 
-      if (response && response.transactionID) {
+      if (response?.transactionID) {
         await relayClientRef.current.pollUntilState(
           response.transactionID,
           [
@@ -225,7 +287,7 @@ export function usePolymarketSession(): PolymarketSession {
         );
       }
 
-      // Derive or create API credentials
+      // Create/derive API credentials and persist to DB + localStorage
       if (walletClientRef.current && eoaAddress) {
         const l1Client = createClobClientL1(walletClientRef.current);
         let creds: ApiKeyCreds;
@@ -234,11 +296,24 @@ export function usePolymarketSession(): PolymarketSession {
         } catch {
           creds = await l1Client.createApiKey() as ApiKeyCreds;
         }
-        saveCreds(eoaAddress, creds);
+
+        // Save to localStorage cache
+        saveCredsLocal(eoaAddress, creds);
+
+        // Persist to DB (will survive backend restarts)
+        await saveCredentials({
+          eoaAddress,
+          apiKey: creds.key,
+          apiSecret: creds.secret,
+          apiPassphrase: creds.passphrase,
+          safeAddress,
+          safeDeployed: true,
+          tokensApproved: true,
+        });
+
         clobClientRef.current = createClobClient(walletClientRef.current, creds);
       }
 
-      markTokensApproved(safeAddress);
       setStatus('ready');
     } catch (e) {
       setError(String(e));
@@ -251,13 +326,14 @@ export function usePolymarketSession(): PolymarketSession {
     async (params: PlaceOrderParams): Promise<{ orderId: string } | null> => {
       if (!clobClientRef.current) throw new Error('Trading session not ready');
 
-      const { tokenId, side, price, size, negRisk = false } = params;
+      const { tokenId, price, size, negRisk = false } = params;
 
+      // Both YES and NO are BUY orders — caller passes the correct outcome token ID
       const order = {
         tokenID: tokenId,
         price,
         size,
-        side: side === 'YES' ? Side.BUY : Side.SELL,
+        side: Side.BUY,
         feeRateBps: 0,
         expiration: 0,
         taker: '0x0000000000000000000000000000000000000000' as `0x${string}`,
