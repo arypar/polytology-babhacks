@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 import { fetchMarketHistory } from '@/lib/polymarket-data';
 import type { PolymarketMarket, PolymarketPricePoint } from '@/lib/types';
@@ -35,9 +35,16 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
   const val = payload[0].value as number;
   return (
-    <div className="rounded-md border border-white/[0.1] bg-[#0D0D14] px-3 py-2 text-[12px]">
-      <div className="text-white/40 mb-0.5">{label}</div>
-      <div className="font-bold text-primary">{(val * 100).toFixed(1)}%</div>
+    <div
+      className="px-2.5 py-1.5 text-[11px]"
+      style={{
+        backgroundColor: 'var(--bg-elevated)',
+        border: '1px solid var(--border-strong)',
+        color: 'var(--text)',
+      }}
+    >
+      <div className="terminal-label mb-0.5">{label}</div>
+      <div className="metric font-semibold" style={{ color: '#1652F0' }}>{(val * 100).toFixed(1)}%</div>
     </div>
   );
 }
@@ -55,20 +62,17 @@ export function MarketChart({ market }: MarketChartProps) {
     });
   }, [market.conditionId]);
 
-  const filteredHistory = (() => {
+  const chartData = useMemo(() => {
     const now = Date.now();
     const cutoffs: Record<Range, number> = {
       '24H': now - 24 * 3600 * 1000,
       '7D': now - 7 * 24 * 3600 * 1000,
       '30D': now - 30 * 24 * 3600 * 1000,
     };
-    return allHistory.filter(p => p.t >= cutoffs[range]);
-  })();
-
-  const chartData = filteredHistory.map(p => ({
-    time: formatTime(p.t, range),
-    value: p.p,
-  }));
+    return allHistory
+      .filter(p => p.t >= cutoffs[range])
+      .map(p => ({ time: formatTime(p.t, range), value: p.p }));
+  }, [allHistory, range]);
 
   const currentYes = market.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
   const change = market.priceChange24h;
@@ -77,28 +81,46 @@ export function MarketChart({ market }: MarketChartProps) {
   const RANGES: Range[] = ['24H', '7D', '30D'];
 
   return (
-    <div className="rounded-lg border border-white/[0.08] bg-[#0D0D14] p-5">
+    <div
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+      }}
+    >
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <p className="text-[11px] font-medium text-white/40 mb-1">YES Probability</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-white">{(currentYes * 100).toFixed(0)}%</span>
-            <span className={`text-sm font-semibold ${isUp ? 'text-yes' : 'text-no'}`}>
-              {isUp ? '▲' : '▼'} {Math.abs(change * 100).toFixed(1)}pp 24h
-            </span>
-          </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 10px',
+          borderBottom: '1px solid var(--border)',
+          backgroundColor: 'var(--bg-elevated)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span className="terminal-label">YES PROB</span>
+          <span className="metric text-[15px] font-bold" style={{ color: '#1652F0' }}>
+            {(currentYes * 100).toFixed(1)}%
+          </span>
+          <span
+            className="metric text-[11px] font-semibold"
+            style={{ color: isUp ? '#22c55e' : '#ef4444' }}
+          >
+            {isUp ? '▲' : '▼'} {Math.abs(change * 100).toFixed(1)}% 24h
+          </span>
         </div>
-        <div className="flex gap-1">
+        <div style={{ display: 'flex', gap: 2 }}>
           {RANGES.map(r => (
             <button
               key={r}
               onClick={() => setRange(r)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+              className="font-mono text-[9px] font-semibold px-1.5 py-0.5 transition-colors"
+              style={
                 range === r
-                  ? 'bg-primary/15 text-primary border border-primary/30'
-                  : 'text-white/40 hover:text-white/70'
-              }`}
+                  ? { backgroundColor: 'var(--accent)', color: '#000' }
+                  : { backgroundColor: 'transparent', color: 'var(--text-tertiary)', border: '1px solid var(--border)' }
+              }
             >
               {r}
             </button>
@@ -107,48 +129,47 @@ export function MarketChart({ market }: MarketChartProps) {
       </div>
 
       {/* Chart */}
-      {loading ? (
-        <div className="h-[180px] flex items-center justify-center">
-          <div className="h-6 w-6 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={180}>
-          <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-            <defs>
-              <linearGradient id="yesGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#2E5CFF" stopOpacity={0.3} />
-                <stop offset="100%" stopColor="#2E5CFF" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-            <XAxis
-              dataKey="time"
-              tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              domain={[0, 1]}
-              tickFormatter={v => `${(v * 100).toFixed(0)}%`}
-              tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
-              tickLine={false}
-              axisLine={false}
-              tickCount={5}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="#2E5CFF"
-              strokeWidth={1.5}
-              fill="url(#yesGrad)"
-              dot={false}
-              activeDot={{ r: 4, fill: '#2E5CFF', stroke: 'rgba(46,92,255,0.3)', strokeWidth: 4 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      )}
+      <div style={{ padding: '8px 4px 4px 4px' }}>
+        {loading ? (
+          <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span className="terminal-label">LOADING…</span>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span className="terminal-label">NO PRICE HISTORY</span>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={chartData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis
+                dataKey="time"
+                tick={{ fill: '#4a4a5a', fontSize: 9, fontFamily: 'var(--font-geist-mono)' }}
+                tickLine={false}
+                axisLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                domain={[0, 1]}
+                tickFormatter={v => `${(v * 100).toFixed(0)}%`}
+                tick={{ fill: '#4a4a5a', fontSize: 9, fontFamily: 'var(--font-geist-mono)' }}
+                tickLine={false}
+                axisLine={false}
+                tickCount={5}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="#1652F0"
+                strokeWidth={1.5}
+                dot={false}
+                activeDot={{ r: 3, fill: '#1652F0' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
     </div>
   );
 }
