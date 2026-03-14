@@ -22,6 +22,27 @@ let clobWs: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let connected = false;
 
+// Throttled broadcast — accumulate all updates and flush every 250ms max.
+// Without this, 1800+ subscribed tokens generate hundreds of WS messages/sec.
+const pendingBatch: Record<string, { yes: number; no: number }> = {};
+let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleBroadcast(updates: Record<string, { yes: number; no: number }>): void {
+  Object.assign(pendingBatch, updates);
+  if (broadcastTimer) return;
+  broadcastTimer = setTimeout(() => {
+    broadcastTimer = null;
+    const keys = Object.keys(pendingBatch);
+    if (keys.length === 0) return;
+    const snapshot: Record<string, { yes: number; no: number }> = {};
+    for (const k of keys) {
+      snapshot[k] = pendingBatch[k];
+      delete pendingBatch[k];
+    }
+    broadcastToAll({ type: 'price_update', updates: snapshot });
+  }, 250);
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 /**
@@ -111,7 +132,7 @@ function connect(): void {
       }
 
       if (Object.keys(batch).length > 0) {
-        broadcastToAll({ type: 'price_update', updates: batch });
+        scheduleBroadcast(batch);
       }
     } catch { /* malformed message — ignore */ }
   });

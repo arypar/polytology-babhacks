@@ -13,6 +13,8 @@ import strategiesRouter from './routes/strategies.js';
 import tradesRouter from './routes/trades.js';
 import credentialsRouter from './routes/credentials.js';
 import fundingRouter from './routes/funding.js';
+import datasourcesRouter from './routes/datasources.js';
+import demoFeedsRouter from './routes/demo-feeds.js';
 import { setupWebSocket } from './lib/ws-server.js';
 
 const app = express();
@@ -51,6 +53,8 @@ app.use('/api', strategiesRouter);
 app.use('/api', tradesRouter);
 app.use('/api', credentialsRouter);
 app.use('/api', fundingRouter);
+app.use('/api', datasourcesRouter);
+app.use('/', demoFeedsRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
