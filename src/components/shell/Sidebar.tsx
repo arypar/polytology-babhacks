@@ -7,9 +7,10 @@ import {
   Blocks,
   Rss,
   Activity,
+  Users2,
+  Database,
   ChevronLeft,
   ChevronRight,
-  Wallet,
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -24,9 +25,11 @@ interface SidebarProps {
 
 const NAV_ITEMS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'Intelligence', label: 'Intelligence', icon: BarChart2 },
-  { id: 'Builder',      label: 'Builder',      icon: Blocks },
-  { id: 'Feed',         label: 'Feed',         icon: Rss },
-  { id: 'Executing',    label: 'Executing',    icon: Activity },
+  { id: 'Builder',      label: 'Builder',      icon: Blocks    },
+  { id: 'Sources',      label: 'Sources',      icon: Database  },
+  { id: 'Feed',         label: 'Feed',         icon: Rss       },
+  { id: 'Executing',    label: 'Executing',    icon: Activity  },
+  { id: 'Users',        label: 'Users',        icon: Users2    },
 ];
 
 export function Sidebar({ active, onChange, collapsed, onCollapsedChange }: SidebarProps) {
@@ -41,11 +44,13 @@ export function Sidebar({ active, onChange, collapsed, onCollapsedChange }: Side
     ? `${embeddedWallet.address.slice(0, 6)}…${embeddedWallet.address.slice(-4)}`
     : null;
 
+  const sessionColor = status === 'ready' ? '#22c55e' : status === 'idle' ? '#4a4a5a' : '#1652F0';
+
   return (
     <aside
       className={cn(
         'fixed left-0 top-0 z-40 flex h-screen flex-col transition-all duration-200',
-        collapsed ? 'w-16' : 'w-64'
+        collapsed ? 'w-12' : 'w-[200px]'
       )}
       style={{
         backgroundColor: 'var(--sidebar-bg)',
@@ -55,136 +60,138 @@ export function Sidebar({ active, onChange, collapsed, onCollapsedChange }: Side
       {/* Logo + collapse toggle */}
       <div
         className={cn(
-          'flex h-14 items-center border-b px-3 shrink-0',
-          collapsed ? 'justify-center' : 'justify-between'
+          'flex h-10 items-center shrink-0',
+          collapsed ? 'justify-center px-0' : 'justify-between px-3'
         )}
-        style={{ borderColor: 'var(--sidebar-border)' }}
+        style={{ borderBottom: '1px solid var(--sidebar-border)' }}
       >
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Image src="/logos/icon-white.svg" alt="Polytology" width={20} height={20} priority />
+            <Image src="/logos/icon-white.svg" alt="Polytology" width={14} height={14} priority />
             <span
-              className="text-sm font-semibold tracking-[-0.02em] leading-none"
-              style={{ color: 'var(--sidebar-text-active)' }}
+              className="font-mono text-[11px] font-bold tracking-[0.05em] uppercase"
+              style={{ color: 'var(--accent)' }}
             >
-              Polytology
+              POLYTOLOGY
             </span>
           </div>
         )}
         {collapsed && (
-          <Image src="/logos/icon-white.svg" alt="Polytology" width={20} height={20} priority />
+          <Image src="/logos/icon-white.svg" alt="Polytology" width={14} height={14} priority />
         )}
-        <button
-          onClick={() => onCollapsedChange(!collapsed)}
-          className={cn(
-            'flex h-6 w-6 items-center justify-center rounded transition-colors',
-            collapsed && 'mt-0'
-          )}
-          style={{ color: 'var(--sidebar-text)' }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'var(--sidebar-text-active)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'var(--sidebar-text)')}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed
-            ? <ChevronRight className="h-3.5 w-3.5" />
-            : <ChevronLeft className="h-3.5 w-3.5" />
-          }
-        </button>
+
+        {!collapsed && (
+          <button
+            onClick={() => onCollapsedChange(!collapsed)}
+            className="flex h-5 w-5 items-center justify-center transition-colors"
+            style={{ color: 'var(--sidebar-text)' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--sidebar-text-active)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--sidebar-text)')}
+            title="Collapse sidebar"
+          >
+            <ChevronLeft className="h-3 w-3" />
+          </button>
+        )}
+
+        {collapsed && (
+          <button
+            onClick={() => onCollapsedChange(!collapsed)}
+            className="absolute -right-3 top-3 flex h-5 w-5 items-center justify-center transition-colors"
+            style={{
+              backgroundColor: 'var(--sidebar-bg)',
+              border: '1px solid var(--sidebar-border)',
+              color: 'var(--sidebar-text)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--sidebar-text-active)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--sidebar-text)')}
+            title="Expand sidebar"
+          >
+            <ChevronRight className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2">
-        {!collapsed && (
-          <p
-            className="mb-1.5 px-2 font-mono text-[10px] font-semibold tracking-widest uppercase"
-            style={{ color: 'var(--sidebar-text)', opacity: 0.45 }}
-          >
-            Navigation
-          </p>
-        )}
-
-        <div className="space-y-0.5">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
-            const isActive = active === id;
-            return (
-              <button
-                key={id}
-                onClick={() => onChange(id)}
-                title={collapsed ? label : undefined}
-                className={cn(
-                  'relative flex w-full items-center rounded transition-all duration-150',
-                  collapsed ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
-                  isActive ? 'rounded' : ''
-                )}
-                style={{
-                  backgroundColor: isActive ? 'var(--sidebar-bg-elevated)' : 'transparent',
-                  color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
-                }}
-                onMouseEnter={e => {
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)';
-                    e.currentTarget.style.color = 'var(--sidebar-text-active)';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!isActive) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.color = 'var(--sidebar-text)';
-                  }
-                }}
-              >
-                {/* Active left accent bar */}
-                {isActive && (
-                  <span
-                    className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r"
-                    style={{ backgroundColor: 'var(--sidebar-accent)' }}
-                  />
-                )}
-                <Icon
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: isActive ? 'var(--sidebar-accent)' : 'inherit' }}
+      <nav className="flex-1 overflow-y-auto py-2">
+        {NAV_ITEMS.map(({ id, label, icon: Icon, code }) => {
+          const isActive = active === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onChange(id)}
+              title={collapsed ? label : undefined}
+              className={cn(
+                'relative flex w-full items-center transition-all duration-100',
+                collapsed ? 'justify-center h-9 px-0' : 'gap-2.5 px-3 py-2'
+              )}
+              style={{
+                backgroundColor: isActive ? 'rgba(245,158,11,0.06)' : 'transparent',
+                color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
+              }}
+              onMouseEnter={e => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)';
+                  e.currentTarget.style.color = 'var(--sidebar-text-active)';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = 'var(--sidebar-text)';
+                }
+              }}
+            >
+              {/* Amber left border when active */}
+              {isActive && (
+                <span
+                  className="absolute left-0 top-0 bottom-0 w-0.5"
+                  style={{ backgroundColor: 'var(--accent)' }}
                 />
-                {!collapsed && (
-                  <span className="text-xs font-medium">{label}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+              )}
+
+              <Icon
+                className="h-3.5 w-3.5 shrink-0"
+                style={{ color: isActive ? 'var(--accent)' : 'inherit' }}
+              />
+
+              {!collapsed && (
+                <span className="font-mono text-[11px] font-medium truncate">{label}</span>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
-      {/* Wallet status at bottom */}
+      {/* Session status at bottom */}
       <div
-        className="shrink-0 border-t p-2"
-        style={{ borderColor: 'var(--sidebar-border)' }}
+        className="shrink-0 p-2"
+        style={{ borderTop: '1px solid var(--sidebar-border)' }}
       >
         {authenticated ? (
           <div
             className={cn(
-              'flex items-center rounded px-2 py-1.5',
-              collapsed ? 'justify-center' : 'gap-2'
+              'flex items-center',
+              collapsed ? 'justify-center' : 'gap-2 px-2 py-1.5'
             )}
-            style={{ backgroundColor: 'var(--sidebar-bg-elevated)' }}
           >
             <div
               className="h-1.5 w-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: status === 'ready' ? '#16a34a' : '#d97706' }}
+              style={{ backgroundColor: sessionColor }}
             />
-            {!collapsed && (
+            {!collapsed && displayAddress && (
               <span className="text-[10px] font-mono truncate" style={{ color: 'var(--sidebar-text)' }}>
-                {displayAddress ?? 'Connected'}
+                {displayAddress}
               </span>
             )}
           </div>
         ) : (
           <div
             className={cn(
-              'flex items-center rounded px-2 py-1.5',
-              collapsed ? 'justify-center' : 'gap-2'
+              'flex items-center',
+              collapsed ? 'justify-center' : 'gap-2 px-2 py-1.5'
             )}
-            title={collapsed ? 'Not connected' : undefined}
           >
-            <Wallet className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--sidebar-text)' }} />
+            <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#4a4a5a' }} />
             {!collapsed && (
               <span className="text-[10px] font-mono" style={{ color: 'var(--sidebar-text)' }}>
                 Not connected

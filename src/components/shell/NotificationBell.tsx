@@ -32,30 +32,60 @@ export function NotificationBell() {
 
   return (
     <div className="relative" ref={panelRef}>
+      {/* Bell button */}
       <button
         onClick={() => setOpen(prev => !prev)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.05] backdrop-blur-xl transition-all hover:bg-white/[0.1] hover:border-white/[0.16]"
+        className="relative flex h-7 w-7 items-center justify-center rounded transition-colors"
+        style={{
+          border: '1px solid var(--border)',
+          backgroundColor: open ? 'var(--bg-elevated)' : 'var(--bg-elevated)',
+          color: 'var(--text-tertiary)',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = 'var(--text)';
+          e.currentTarget.style.borderColor = 'var(--border-strong)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = 'var(--text-tertiary)';
+          e.currentTarget.style.borderColor = 'var(--border)';
+        }}
       >
-        <Bell className="h-4 w-4 text-white/60" />
+        <Bell className="h-3.5 w-3.5" />
         {unreadCount > 0 && (
           <span
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white"
-            style={{ boxShadow: '0 0 8px rgba(0,229,255,0.5)' }}
+            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white"
+            style={{ backgroundColor: 'var(--accent)' }}
           >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
+      {/* Dropdown panel */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-white/[0.08] bg-[#0c0c14]/95 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-          <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-            <span className="text-[13px] font-semibold text-white">Notifications</span>
+        <div
+          className="absolute right-0 top-full mt-2 w-80 rounded-lg shadow-xl animate-fade-in z-50"
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-strong)',
+          }}
+        >
+          {/* Header */}
+          <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{ borderBottom: '1px solid var(--border)' }}
+          >
+            <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              Notifications
+            </span>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <button
                   onClick={markAllRead}
-                  className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                  className="text-[11px] font-medium transition-colors"
+                  style={{ color: 'var(--accent)' }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
                 >
                   Mark all read
                 </button>
@@ -63,7 +93,10 @@ export function NotificationBell() {
               {notifications.length > 0 && (
                 <button
                   onClick={clearAll}
-                  className="text-[11px] font-medium text-white/30 hover:text-white/50 transition-colors"
+                  className="text-[11px] font-medium transition-colors"
+                  style={{ color: 'var(--text-tertiary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-tertiary)')}
                 >
                   Clear
                 </button>
@@ -71,11 +104,12 @@ export function NotificationBell() {
             </div>
           </div>
 
+          {/* Content */}
           <div className="max-h-80 overflow-y-auto">
             {notifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
-                <Bell className="h-5 w-5 text-white/15 mb-2" />
-                <p className="text-[12px] text-white/30">No notifications yet</p>
+                <Bell className="h-5 w-5 mb-2" style={{ color: 'var(--text-tertiary)' }} />
+                <p className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>No notifications yet</p>
               </div>
             ) : (
               <div className="p-1.5">
@@ -83,45 +117,73 @@ export function NotificationBell() {
                   <div
                     key={n.id}
                     className={cn(
-                      'group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-all hover:bg-white/[0.04]',
-                      !n.read && 'bg-white/[0.02]',
+                      'group flex items-start gap-3 rounded px-3 py-2.5 transition-all cursor-pointer',
                     )}
+                    style={{
+                      backgroundColor: !n.read ? 'var(--accent-subtle)' : 'transparent',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--bg-elevated)')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = !n.read ? 'var(--accent-subtle)' : 'transparent')}
                   >
+                    {/* Unread dot */}
                     <span
-                      className={cn(
-                        'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-                        n.read
-                          ? 'bg-white/10'
-                          : 'bg-primary shadow-[0_0_6px_rgba(0,229,255,0.5)]',
-                      )}
+                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: n.read ? 'var(--border-strong)' : 'var(--accent)' }}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-medium text-white/80 truncate">
+                        <span
+                          className="text-[12px] font-medium truncate"
+                          style={{ color: 'var(--text)' }}
+                        >
                           {n.ruleName}
                         </span>
                         {n.pool && (
-                          <span className="rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/30 shrink-0">
+                          <span
+                            className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                            style={{
+                              border: '1px solid var(--border)',
+                              backgroundColor: 'var(--bg-elevated)',
+                              color: 'var(--text-tertiary)',
+                            }}
+                          >
                             {n.pool}
                           </span>
                         )}
-                        <span className="text-[10px] text-white/25 shrink-0">
+                        <span className="shrink-0 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                           {timeAgo(n.timestamp)}
                         </span>
                       </div>
-                      <p className="text-[11px] text-white/50 mt-0.5">{n.triggerReason}</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                        {n.triggerReason}
+                      </p>
                       {n.conditions.length > 0 && (
-                        <p className="text-[10px] text-primary/70 mt-0.5 truncate">
+                        <p
+                          className="text-[10px] mt-0.5 truncate"
+                          style={{ color: 'var(--accent)' }}
+                        >
                           {n.conditions.join(' · ')}
                         </p>
                       )}
-                      <p className="text-[11px] text-white/40 truncate mt-0.5">&rarr; {n.message}</p>
+                      <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--text-tertiary)' }}>
+                        → {n.message}
+                      </p>
                     </div>
+                    {/* Inline actions */}
                     <div className="flex gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       {!n.read && (
                         <button
                           onClick={() => markRead(n.id)}
-                          className="flex h-5 w-5 items-center justify-center rounded-md text-white/30 hover:text-white/60 hover:bg-white/[0.06]"
+                          className="flex h-5 w-5 items-center justify-center rounded transition-colors"
+                          style={{ color: 'var(--text-tertiary)' }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.color = 'var(--text)';
+                            e.currentTarget.style.backgroundColor = 'var(--bg-elevated)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--text-tertiary)';
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
                           title="Mark read"
                         >
                           <Check className="h-3 w-3" />
@@ -129,7 +191,16 @@ export function NotificationBell() {
                       )}
                       <button
                         onClick={() => dismiss(n.id)}
-                        className="flex h-5 w-5 items-center justify-center rounded-md text-white/30 hover:text-white/60 hover:bg-white/[0.06]"
+                        className="flex h-5 w-5 items-center justify-center rounded transition-colors"
+                        style={{ color: 'var(--text-tertiary)' }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.color = 'var(--text)';
+                          e.currentTarget.style.backgroundColor = 'var(--bg-elevated)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.color = 'var(--text-tertiary)';
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
                         title="Dismiss"
                       >
                         <X className="h-3 w-3" />
