@@ -1,12 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Play, Pause, Square, TrendingUp, TrendingDown, Zap, DollarSign,
-  BarChart2, CheckCircle, Clock, AlertCircle, XCircle, ChevronDown, ChevronUp,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Play, Pause, Square, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ExecutingTrade, StrategyRuntime, TradeStatus, StrategyStatus } from '@/lib/types';
 
 function fmt$(n: number, decimals = 2): string {
@@ -20,10 +15,10 @@ function fmtPct(n: number): string {
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
-  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
+  return `${Math.floor(diff / 86_400_000)}d`;
 }
 
 function timeRunning(ts: number): string {
@@ -34,31 +29,36 @@ function timeRunning(ts: number): string {
   return `${m}m`;
 }
 
-// ── Status badge ──────────────────────────────────────────────
+// ── Status badge ───────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: StrategyStatus | TradeStatus }) {
-  const config: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    running: { label: 'Running', color: 'text-yes bg-yes/10 border-yes/25', icon: Zap },
-    paused: { label: 'Paused', color: 'text-alert bg-alert/10 border-alert/25', icon: Pause },
-    stopped: { label: 'Stopped', color: 'text-white/40 bg-white/[0.04] border-white/[0.08]', icon: Square },
-    pending: { label: 'Pending', color: 'text-primary bg-primary/10 border-primary/25', icon: Clock },
-    filled: { label: 'Filled', color: 'text-yes bg-yes/10 border-yes/25', icon: CheckCircle },
-    failed: { label: 'Failed', color: 'text-no bg-no/10 border-no/25', icon: XCircle },
-    cancelled: { label: 'Cancelled', color: 'text-white/30 bg-white/[0.03] border-white/[0.06]', icon: AlertCircle },
+function StatusChip({ status }: { status: StrategyStatus | TradeStatus }) {
+  const colors: Record<string, { color: string; label: string }> = {
+    running:   { color: '#22c55e', label: 'Running'   },
+    paused:    { color: '#1652F0', label: 'Paused'    },
+    stopped:   { color: '#4a4a5a', label: 'Stopped'   },
+    pending:   { color: '#1652F0', label: 'Pending'   },
+    filled:    { color: '#22c55e', label: 'Filled'    },
+    failed:    { color: '#ef4444', label: 'Failed'    },
+    cancelled: { color: '#4a4a5a', label: 'Cancelled' },
   };
-  const c = config[status] ?? config.stopped;
-  const Icon = c.icon;
+  const c = colors[status] ?? colors.stopped;
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold', c.color)}>
-      <Icon className="h-2.5 w-2.5" />
+    <span
+      className="font-mono text-[10px] px-1.5 py-0.5"
+      style={{
+        border: `1px solid ${c.color}40`,
+        color: c.color,
+        backgroundColor: `${c.color}0d`,
+      }}
+    >
       {c.label}
     </span>
   );
 }
 
-// ── Strategy runtime card ─────────────────────────────────────
+// ── Strategy row ───────────────────────────────────────────────────────────
 
-function StrategyCard({
+function StrategyRow({
   runtime,
   trades,
   onPause,
@@ -77,158 +77,190 @@ function StrategyCard({
   const isPaused = runtime.status === 'paused';
 
   return (
-    <div
-      className={cn(
-        'rounded-lg border border-white/[0.08] bg-[#0D0D14] overflow-hidden transition-colors',
-        isRunning && 'border-l-[3px] border-l-yes'
-      )}
-    >
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          {/* Left: strategy info */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <StatusBadge status={runtime.status} />
-              {isRunning && (
-                <span className="h-1.5 w-1.5 rounded-full bg-yes animate-trade-pulse" />
-              )}
-            </div>
-            <p className="text-[15px] font-semibold text-white/90 mt-1">{runtime.strategyName}</p>
-            <p className="text-[11px] text-white/35 mt-0.5">
-              {runtime.tradesExecuted} trades · running {timeRunning(runtime.startedAt)}
-              {runtime.lastTradeAt && ` · last ${timeAgo(runtime.lastTradeAt)}`}
-            </p>
+    <>
+      <tr
+        style={{
+          borderLeft: isRunning ? '2px solid #22c55e' : '2px solid transparent',
+        }}
+      >
+        {/* Name */}
+        <td style={{ paddingLeft: isRunning ? 10 : 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isRunning && (
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full shrink-0 animate-trade-pulse"
+                style={{ backgroundColor: '#22c55e' }}
+              />
+            )}
+            <span className="text-[12px] font-medium" style={{ color: 'var(--text)' }}>
+              {runtime.strategyName}
+            </span>
           </div>
+          <div className="terminal-label mt-0.5">
+            {runtime.tradesExecuted} trades · {timeRunning(runtime.startedAt)}
+            {runtime.lastTradeAt && ` · ${timeAgo(runtime.lastTradeAt)} ago`}
+          </div>
+        </td>
 
-          {/* Right: PnL + controls */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="text-right">
-              <div className={cn(
-                'text-[18px] font-black tracking-tight',
-                totalPnl >= 0 ? 'text-yes' : 'text-no'
-              )}>
-                {totalPnl >= 0 ? '+' : ''}{fmt$(totalPnl)}
-              </div>
-              <div className="text-[10px] text-white/30">total PnL</div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isRunning && (
-                <button
-                  onClick={onPause}
-                  className="h-7 w-7 flex items-center justify-center rounded-md border border-alert/25 bg-alert/8 text-alert hover:bg-alert/16 transition-colors"
-                  title="Pause strategy"
-                >
-                  <Pause className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {isPaused && onResume && (
-                <button
-                  onClick={onResume}
-                  className="h-7 w-7 flex items-center justify-center rounded-md border border-yes/25 bg-yes/8 text-yes hover:bg-yes/16 transition-colors"
-                  title="Resume strategy"
-                >
-                  <Play className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {runtime.status !== 'stopped' && (
-                <button
-                  onClick={onStop}
-                  className="h-7 w-7 flex items-center justify-center rounded-md border border-white/[0.08] text-white/35 hover:border-no/25 hover:text-no hover:bg-no/8 transition-colors"
-                  title="Stop strategy"
-                >
-                  <Square className="h-3.5 w-3.5" />
-                </button>
-              )}
+        {/* Status */}
+        <td style={{ width: 60 }}>
+          <StatusChip status={runtime.status} />
+        </td>
+
+        {/* PnL */}
+        <td style={{ width: 88 }}>
+          <span
+            className="metric text-[13px] font-bold"
+            style={{ color: totalPnl >= 0 ? '#22c55e' : '#ef4444' }}
+          >
+            {totalPnl >= 0 ? '+' : ''}{fmt$(totalPnl)}
+          </span>
+        </td>
+
+        {/* Deployed */}
+        <td style={{ width: 80 }}>
+          <span className="metric text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+            {fmt$(runtime.totalDeployed, 0)}
+          </span>
+        </td>
+
+        {/* Realized */}
+        <td style={{ width: 80 }}>
+          <span
+            className="metric text-[11px]"
+            style={{ color: runtime.realizedPnl >= 0 ? '#22c55e' : '#ef4444' }}
+          >
+            {fmt$(runtime.realizedPnl)}
+          </span>
+        </td>
+
+        {/* Unrealized */}
+        <td style={{ width: 80 }}>
+          <span
+            className="metric text-[11px]"
+            style={{ color: runtime.unrealizedPnl >= 0 ? '#22c55e' : '#ef4444' }}
+          >
+            {fmt$(runtime.unrealizedPnl)}
+          </span>
+        </td>
+
+        {/* Win Rate */}
+        <td style={{ width: 72 }}>
+          <span
+            className="metric text-[11px] font-semibold"
+            style={{ color: runtime.winRate >= 0.5 ? '#22c55e' : '#ef4444' }}
+          >
+            {fmtPct(runtime.winRate)}
+          </span>
+        </td>
+
+        {/* Controls */}
+        <td style={{ width: 100, paddingRight: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {isRunning && (
               <button
-                onClick={() => setExpanded(!expanded)}
-                className="h-7 w-7 flex items-center justify-center rounded-md border border-white/[0.07] text-white/25 hover:text-white/55 transition-colors"
+                onClick={onPause}
+                className="flex h-5 w-5 items-center justify-center transition-colors"
+                style={{ border: '1px solid #1652F040', color: '#1652F0', backgroundColor: '#1652F00d' }}
+                title="Pause"
               >
-                {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                <Pause className="h-2.5 w-2.5" />
               </button>
-            </div>
+            )}
+            {isPaused && onResume && (
+              <button
+                onClick={onResume}
+                className="flex h-5 w-5 items-center justify-center transition-colors"
+                style={{ border: '1px solid #22c55e40', color: '#22c55e', backgroundColor: '#22c55e0d' }}
+                title="Resume"
+              >
+                <Play className="h-2.5 w-2.5" />
+              </button>
+            )}
+            {runtime.status !== 'stopped' && (
+              <button
+                onClick={onStop}
+                className="flex h-5 w-5 items-center justify-center transition-colors"
+                style={{ border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = '#ef4444';
+                  e.currentTarget.style.color = '#ef4444';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                  e.currentTarget.style.color = 'var(--text-tertiary)';
+                }}
+                title="Stop"
+              >
+                <Square className="h-2.5 w-2.5" />
+              </button>
+            )}
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex h-5 w-5 items-center justify-center transition-colors"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-tertiary)')}
+            >
+              {expanded ? <ChevronUp className="h-2.5 w-2.5" /> : <ChevronDown className="h-2.5 w-2.5" />}
+            </button>
           </div>
-        </div>
-
-        {/* Metrics row */}
-        <div className="grid grid-cols-4 gap-2 mt-4">
-          {[
-            { label: 'Deployed', value: fmt$(runtime.totalDeployed, 0) },
-            { label: 'Realized', value: fmt$(runtime.realizedPnl), color: runtime.realizedPnl >= 0 ? 'text-yes' : 'text-no' },
-            { label: 'Unrealized', value: fmt$(runtime.unrealizedPnl), color: runtime.unrealizedPnl >= 0 ? 'text-yes' : 'text-no' },
-            { label: 'Win Rate', value: fmtPct(runtime.winRate), color: runtime.winRate >= 0.5 ? 'text-yes' : 'text-no' },
-          ].map(m => (
-            <div key={m.label} className="rounded-md border border-white/[0.06] p-2.5 text-center">
-              <div className={cn('text-[13px] font-bold', m.color ?? 'text-white/75')}>{m.value}</div>
-              <div className="text-[10px] text-white/30 mt-0.5">{m.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+        </td>
+      </tr>
 
       {/* Expanded trades */}
-      <AnimatePresence>
-        {expanded && trades.length > 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-white/[0.05] px-4 pb-3">
-              <p className="text-[11px] font-medium text-white/35 mt-3 mb-2">Recent Trades</p>
-              <div className="space-y-1">
-                {trades.map(trade => (
-                  <TradeRow key={trade.id} trade={trade} />
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ── Trade row (inline, for expanded strategy) ─────────────────
-
-function TradeRow({ trade }: { trade: ExecutingTrade }) {
-  const pnl = trade.pnl ?? 0;
-  const isUp = pnl >= 0;
-
-  return (
-    <div className="flex items-center justify-between rounded-md border border-white/[0.04] bg-white/[0.01] px-3 py-2 text-[12px]">
-      <div className="flex items-center gap-3 min-w-0">
-        <span
-          className={cn(
-            'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border',
-            trade.side === 'YES'
-              ? 'text-yes border-yes/25 bg-yes/8'
-              : 'text-no border-no/25 bg-no/8'
-          )}
+      {expanded && trades.length > 0 && trades.map(trade => (
+        <tr
+          key={trade.id}
+          style={{ backgroundColor: 'rgba(255,255,255,0.02)', borderLeft: '2px solid transparent' }}
         >
-          {trade.side}
-        </span>
-        <span className="text-white/55 truncate max-w-[220px]">{trade.marketQuestion}</span>
-      </div>
-      <div className="flex items-center gap-3 shrink-0">
-        <span className="text-[11px] text-white/35 font-mono hidden sm:block">
-          {trade.shares} @ {trade.entryPrice.toFixed(2)}
-        </span>
-        <span className={cn('font-bold min-w-[56px] text-right', isUp ? 'text-yes' : 'text-no')}>
-          {isUp ? '+' : ''}{fmt$(pnl)}
-        </span>
-        <StatusBadge status={trade.status} />
-      </div>
-    </div>
+          <td style={{ paddingLeft: 24 }}>
+            <span
+              className="text-[11px] truncate block max-w-[200px]"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              {trade.marketQuestion}
+            </span>
+          </td>
+          <td>
+            <span
+              className="font-mono text-[9px] font-bold"
+              style={{ color: trade.side === 'YES' ? '#22c55e' : '#ef4444' }}
+            >
+              {trade.side}
+            </span>
+          </td>
+          <td>
+            <span
+              className="metric text-[11px] font-semibold"
+              style={{ color: (trade.pnl ?? 0) >= 0 ? '#22c55e' : '#ef4444' }}
+            >
+              {(trade.pnl ?? 0) >= 0 ? '+' : ''}{fmt$(trade.pnl ?? 0)}
+            </span>
+          </td>
+          <td colSpan={3}>
+            <span className="metric text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+              {trade.shares} shares @ {trade.entryPrice.toFixed(2)}
+            </span>
+          </td>
+          <td>
+            <StatusChip status={trade.status} />
+          </td>
+          <td style={{ paddingRight: 12 }}>
+            <span className="terminal-label">{timeAgo(trade.timestamp)}</span>
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }
 
-// ── Main component ────────────────────────────────────────────
+// ── Interface ──────────────────────────────────────────────────────────────
 
 interface ExecutingTradesTabProps {
   trades: ExecutingTrade[];
   runtimes: StrategyRuntime[];
+  usingRealData?: boolean;
   onUpdateTradeStatus: (id: string, status: TradeStatus) => void;
   onPauseStrategy: (strategyId: string) => void;
   onStopStrategy: (strategyId: string) => void;
@@ -238,10 +270,13 @@ interface ExecutingTradesTabProps {
 export function ExecutingTradesTab({
   trades,
   runtimes,
+  usingRealData = false,
   onPauseStrategy,
   onStopStrategy,
   onResumeStrategy,
 }: ExecutingTradesTabProps) {
+  void usingRealData;
+
   const totalPnl = runtimes.reduce((s, r) => s + r.realizedPnl + r.unrealizedPnl, 0);
   const totalDeployed = runtimes.reduce((s, r) => s + r.totalDeployed, 0);
   const totalTrades = runtimes.reduce((s, r) => s + r.tradesExecuted, 0);
@@ -251,134 +286,181 @@ export function ExecutingTradesTab({
   const runningCount = runtimes.filter(r => r.status === 'running').length;
 
   return (
-    <div className="space-y-8">
-      {/* Aggregate stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          {
-            label: 'Total PnL',
-            value: `${totalPnl >= 0 ? '+' : ''}${fmt$(totalPnl)}`,
-            color: totalPnl >= 0 ? 'text-yes' : 'text-no',
-            icon: totalPnl >= 0 ? TrendingUp : TrendingDown,
-            sub: 'realized + unrealized',
-          },
-          {
-            label: 'Deployed Capital',
-            value: fmt$(totalDeployed, 0),
-            color: 'text-white',
-            icon: DollarSign,
-            sub: 'across all strategies',
-          },
-          {
-            label: 'Total Trades',
-            value: String(totalTrades),
-            color: 'text-white',
-            icon: BarChart2,
-            sub: `${runningCount} strateg${runningCount !== 1 ? 'ies' : 'y'} running`,
-          },
-          {
-            label: 'Avg Win Rate',
-            value: fmtPct(avgWinRate),
-            color: avgWinRate >= 0.5 ? 'text-yes' : 'text-no',
-            icon: Zap,
-            sub: 'across strategies',
-          },
-        ].map(s => (
-          <div key={s.label} className="rounded-lg border border-white/[0.08] bg-[#0D0D14] p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-medium text-white/40">{s.label}</span>
-              <s.icon className="h-4 w-4 text-white/20" />
-            </div>
-            <div className={cn('text-[22px] font-bold tracking-tight', s.color)}>{s.value}</div>
-            <div className="text-[11px] text-white/30 mt-1">{s.sub}</div>
-          </div>
-        ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+      {/* Stats strip */}
+      <div
+        style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border)',
+          backgroundColor: 'var(--bg-elevated)',
+          marginBottom: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <StatMetric
+          label="Total PnL"
+          value={`${totalPnl >= 0 ? '+' : ''}${fmt$(totalPnl)}`}
+          color={totalPnl >= 0 ? '#22c55e' : '#ef4444'}
+        />
+        <div style={{ width: 1, backgroundColor: 'var(--border)', alignSelf: 'stretch' }} />
+        <StatMetric label="Deployed" value={fmt$(totalDeployed, 0)} />
+        <div style={{ width: 1, backgroundColor: 'var(--border)', alignSelf: 'stretch' }} />
+        <StatMetric
+          label="Trades"
+          value={String(totalTrades)}
+          sub={`${runningCount} running`}
+        />
+        <div style={{ width: 1, backgroundColor: 'var(--border)', alignSelf: 'stretch' }} />
+        <StatMetric
+          label="Win Rate"
+          value={fmtPct(avgWinRate)}
+          color={avgWinRate >= 0.5 ? '#22c55e' : '#ef4444'}
+        />
       </div>
 
-      {/* Strategy cards */}
-      <div>
-        <div className="flex items-center justify-between pb-3 border-b border-white/[0.06] mb-4">
-          <h2 className="text-[15px] font-semibold text-white">Active Strategies</h2>
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-yes animate-trade-pulse" />
-            <span className="text-[12px] text-white/35">{runningCount} running</span>
+      {/* Strategies table */}
+      <section style={{ marginBottom: 24 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 0',
+            borderBottom: '1px solid var(--border)',
+            marginBottom: 8,
+          }}
+        >
+          <span className="terminal-label">Active Strategies</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full animate-trade-pulse"
+              style={{ backgroundColor: '#22c55e' }}
+            />
+            <span className="terminal-label">{runningCount} running</span>
           </div>
         </div>
 
         {runtimes.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-white/[0.07] p-16 text-center">
-            <Zap className="h-10 w-10 text-white/10 mx-auto mb-4" />
-            <p className="text-[15px] text-white/25 font-medium">No autonomous strategies running</p>
-            <p className="text-[13px] text-white/18 mt-1">Build and activate a strategy in the Builder tab</p>
+          <div
+            style={{
+              padding: '32px 16px',
+              textAlign: 'center',
+              border: '1px solid var(--border)',
+              backgroundColor: 'var(--bg-card)',
+            }}
+          >
+            <Zap className="h-5 w-5 mx-auto mb-3" style={{ color: 'var(--text-tertiary)' }} />
+            <p className="terminal-label">No strategies running</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Build and activate a strategy in the Builder tab
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {runtimes.map(runtime => (
-              <StrategyCard
-                key={runtime.strategyId}
-                runtime={runtime}
-                trades={trades.filter(t => t.strategyId === runtime.strategyId)}
-                onPause={() => onPauseStrategy(runtime.strategyId)}
-                onStop={() => onStopStrategy(runtime.strategyId)}
-                onResume={onResumeStrategy ? () => onResumeStrategy(runtime.strategyId) : undefined}
-              />
-            ))}
+          <div style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-card)' }}>
+            <table className="terminal-table" style={{ width: '100%' }}>
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th style={{ width: 80 }}>Status</th>
+                  <th style={{ width: 88 }}>Total PnL</th>
+                  <th style={{ width: 80 }}>Deployed</th>
+                  <th style={{ width: 80 }}>Realized</th>
+                  <th style={{ width: 80 }}>Unrealized</th>
+                  <th style={{ width: 72 }}>Win Rate</th>
+                  <th style={{ width: 100 }}>Controls</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runtimes.map(runtime => (
+                  <StrategyRow
+                    key={runtime.strategyId}
+                    runtime={runtime}
+                    trades={trades.filter(t => t.strategyId === runtime.strategyId)}
+                    onPause={() => onPauseStrategy(runtime.strategyId)}
+                    onStop={() => onStopStrategy(runtime.strategyId)}
+                    onResume={onResumeStrategy ? () => onResumeStrategy(runtime.strategyId) : undefined}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Trade log — semantic table */}
-      <div>
-        <div className="flex items-center justify-between pb-3 border-b border-white/[0.06] mb-4">
-          <h2 className="text-[15px] font-semibold text-white">Trade Log</h2>
-          <span className="text-[12px] text-white/30">{trades.length} trades</span>
+      {/* Trade log */}
+      <section>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 0',
+            borderBottom: '1px solid var(--border)',
+            marginBottom: 8,
+          }}
+        >
+          <span className="terminal-label">Trade Log</span>
+          <span className="terminal-label">{trades.length} trades</span>
         </div>
 
-        <div className="rounded-lg border border-white/[0.08] bg-[#0D0D14] overflow-hidden">
-          <table className="w-full text-[12px]">
+        <div style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-card)' }}>
+          <table className="terminal-table" style={{ width: '100%' }}>
             <thead>
-              <tr className="border-b border-white/[0.06]">
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/35 uppercase tracking-wider">Market</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/35 uppercase tracking-wider w-[60px]">Side</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/35 uppercase tracking-wider w-[120px] hidden sm:table-cell">Position</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-white/35 uppercase tracking-wider w-[80px]">PnL</th>
-                <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-white/35 uppercase tracking-wider w-[90px]">Status</th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-white/35 uppercase tracking-wider w-[80px] hidden md:table-cell">When</th>
+              <tr>
+                <th>Market</th>
+                <th style={{ width: 44 }}>Side</th>
+                <th style={{ width: 120 }} className="hidden sm:table-cell">Position</th>
+                <th style={{ width: 80, textAlign: 'right' }}>PnL</th>
+                <th style={{ width: 80 }}>Status</th>
+                <th style={{ width: 60, textAlign: 'right' }} className="hidden md:table-cell">When</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.04]">
+            <tbody>
               {trades.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-white/25">No trades yet</td>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '24px 16px' }}>
+                    <span className="terminal-label">No trades yet</span>
+                  </td>
                 </tr>
               ) : trades.map(trade => {
                 const pnl = trade.pnl ?? 0;
                 return (
-                  <tr key={trade.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="px-4 py-3 text-white/65 max-w-[200px] truncate">{trade.marketQuestion}</td>
-                    <td className="px-4 py-3">
+                  <tr key={trade.id}>
+                    <td style={{ maxWidth: 200 }}>
                       <span
-                        className={cn(
-                          'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border',
-                          trade.side === 'YES'
-                            ? 'text-yes border-yes/25 bg-yes/8'
-                            : 'text-no border-no/25 bg-no/8'
-                        )}
+                        className="text-[11px] truncate block"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {trade.marketQuestion}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className="font-mono text-[9px] font-bold"
+                        style={{ color: trade.side === 'YES' ? '#22c55e' : '#ef4444' }}
                       >
                         {trade.side}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-white/35 font-mono text-[11px] hidden sm:table-cell">
-                      {trade.shares} @ {trade.entryPrice.toFixed(2)}
+                    <td className="hidden sm:table-cell">
+                      <span className="metric text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {trade.shares} @ {trade.entryPrice.toFixed(2)}
+                      </span>
                     </td>
-                    <td className={cn('px-4 py-3 font-bold text-right', pnl >= 0 ? 'text-yes' : 'text-no')}>
-                      {pnl >= 0 ? '+' : ''}{fmt$(pnl)}
+                    <td style={{ textAlign: 'right' }}>
+                      <span
+                        className="metric text-[11px] font-bold"
+                        style={{ color: pnl >= 0 ? '#22c55e' : '#ef4444' }}
+                      >
+                        {pnl >= 0 ? '+' : ''}{fmt$(pnl)}
+                      </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={trade.status} />
+                    <td>
+                      <StatusChip status={trade.status} />
                     </td>
-                    <td className="px-4 py-3 text-white/25 text-right text-[11px] hidden md:table-cell">
-                      {timeAgo(trade.timestamp)}
+                    <td className="hidden md:table-cell" style={{ textAlign: 'right', paddingRight: 12 }}>
+                      <span className="terminal-label">{timeAgo(trade.timestamp)}</span>
                     </td>
                   </tr>
                 );
@@ -386,7 +468,34 @@ export function ExecutingTradesTab({
             </tbody>
           </table>
         </div>
+      </section>
+    </div>
+  );
+}
+
+function StatMetric({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  color?: string;
+}) {
+  return (
+    <div style={{ padding: '8px 16px' }}>
+      <div className="terminal-label">{label}</div>
+      <div
+        className="metric text-[14px] font-bold leading-tight"
+        style={{ color: color ?? 'var(--text)' }}
+      >
+        {value}
       </div>
+      {sub && (
+        <div className="terminal-label mt-0.5">{sub}</div>
+      )}
     </div>
   );
 }
