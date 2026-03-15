@@ -232,7 +232,7 @@ function computeRuntimes(
 }
 
 
-export function useExecutingTrades(eoaAddress?: string | null) {
+export function useExecutingTrades(eoaAddress?: string | null, isActive = true) {
   const [trades, setTrades] = useState<ExecutingTrade[]>([]);
   const [runtimes, setRuntimes] = useState<StrategyRuntime[]>([]);
   const [usingRealData, setUsingRealData] = useState(false);
@@ -263,8 +263,9 @@ export function useExecutingTrades(eoaAddress?: string | null) {
     return () => { cancelled = true; };
   }, [eoaAddress]);
 
-  // Live price simulation for open/filled positions
+  // Live price simulation — only runs when the Executing tab is visible
   useEffect(() => {
+    if (!isActive) return;
     const interval = setInterval(() => {
       setTrades(prev =>
         prev.map(t => {
@@ -277,7 +278,7 @@ export function useExecutingTrades(eoaAddress?: string | null) {
       );
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   const updateTradeStatus = useCallback((id: string, status: TradeStatus) => {
     setTrades(prev => prev.map(t => t.id === id ? { ...t, status } : t));
