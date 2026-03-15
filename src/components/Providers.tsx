@@ -11,10 +11,25 @@ import { useState, type ReactNode } from 'react';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
+  const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+
+  if (!privyAppId) {
+    return (
+      <WagmiProvider config={config}>
+        <QueryClientProvider client={queryClient}>
+          <NotificationProvider>
+            <LivePricesProvider>
+              {children}
+            </LivePricesProvider>
+          </NotificationProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    );
+  }
 
   return (
     <PrivyProvider
-      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
+      appId={privyAppId}
       config={{
         appearance: {
           theme: 'dark',
