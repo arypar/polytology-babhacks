@@ -32,7 +32,7 @@
   --color-muted: var(--bg-elevated);
   --color-secondary-foreground: var(--text-secondary);
   --color-secondary: var(--bg-elevated);
-  --color-primary-foreground: #000000;
+  --color-primary-foreground: #ffffff;
   --color-primary: var(--accent);
   --color-popover-foreground: var(--text);
   --color-popover: var(--bg-card);
@@ -231,7 +231,7 @@
 .block-connector-active {
   stroke: var(--accent);
   stroke-dasharray: none;
-  filter: drop-shadow(0 0 3px rgba(245,158,11,0.4));
+  filter: drop-shadow(0 0 3px rgba(22, 82, 240, 0.4));
 }
 
 /* ── Tick animations ── */
@@ -245,13 +245,29 @@
   100% { transform: translateY(0); opacity: 1; }
 }
 
+/* ── Price flash animations ── */
+@keyframes price-flash-up {
+  0%   { filter: brightness(5) drop-shadow(0 0 6px currentColor); transform: translateY(6px) scaleY(0.7); opacity: 0; }
+  18%  { filter: brightness(3) drop-shadow(0 0 10px currentColor); transform: translateY(0) scaleY(1.06); opacity: 1; }
+  50%  { filter: brightness(1.8) drop-shadow(0 0 5px currentColor); transform: scaleY(1); }
+  100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
+}
+@keyframes price-flash-down {
+  0%   { filter: brightness(5) drop-shadow(0 0 6px currentColor); transform: translateY(-6px) scaleY(0.7); opacity: 0; }
+  18%  { filter: brightness(3) drop-shadow(0 0 10px currentColor); transform: translateY(0) scaleY(1.06); opacity: 1; }
+  50%  { filter: brightness(1.8) drop-shadow(0 0 5px currentColor); transform: scaleY(1); }
+  100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
+}
+.price-glow-up   { display: inline-block; animation: price-flash-up   0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.price-glow-down { display: inline-block; animation: price-flash-down 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
 @keyframes trade-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
   50% { box-shadow: 0 0 0 4px rgba(34,197,94,0); }
 }
 
 @keyframes flash-amber {
-  0% { background-color: rgba(245,158,11,0.12); }
+  0% { background-color: rgba(22, 82, 240, 0.12); }
   100% { background-color: transparent; }
 }
 
@@ -306,6 +322,20 @@
 .prob-bar-no {
   background: #ef4444;
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── News feed ── */
+@keyframes news-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes news-scan {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(400%); }
+}
+.news-article-enter {
+  opacity: 0;
+  animation: news-slide-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 /* ── Feed row ── */
