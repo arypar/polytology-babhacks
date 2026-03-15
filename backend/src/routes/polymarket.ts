@@ -366,8 +366,9 @@ router.get('/markets', async (req, res) => {
   // 2. Database (primary source)
   if (DB_ENABLED && supabase) {
     try {
-      // Fetch extra rows to account for post-filter (resolved markets in DB)
-      const dbFetchLimit = lim * 3;
+      // Fetch extra rows to account for post-filter (resolved markets in DB).
+      // Cap at 2000 to stay within Supabase's single-request limits.
+      const dbFetchLimit = Math.min(lim * 3, 2000);
       let query = supabase
         .from('cached_markets')
         .select('*')
