@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Loader2, Shield, Coins, Wallet, X } from 'lucide-react';
+import { CheckCircle2, Loader2, Shield, Coins, Wallet, X, Copy, Check, ExternalLink } from 'lucide-react';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 import { cn } from '@/lib/utils';
 
@@ -92,6 +92,16 @@ export function OnboardingFlow({ open, onClose }: OnboardingFlowProps) {
     usePolymarketSession();
   const [loading, setLoading] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyAddress = () => {
+    const addr = safeAddress ?? eoaAddress;
+    if (!addr) return;
+    navigator.clipboard.writeText(addr).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   // Map session status → wizard step
   const currentStep: Step =
@@ -101,6 +111,8 @@ export function OnboardingFlow({ open, onClose }: OnboardingFlowProps) {
       ? 1
       : status === 'safe-deploying'
       ? 1
+      : status === 'safe-deployed'
+      ? 2
       : status === 'approving'
       ? 2
       : status === 'ready'
@@ -256,6 +268,46 @@ export function OnboardingFlow({ open, onClose }: OnboardingFlowProps) {
                   );
                 })}
               </div>
+
+              {/* Deposit address — shown when ready */}
+              {currentStep === 3 && (safeAddress ?? eoaAddress) && (
+                <motion.div
+                  className="mb-4 rounded-lg border border-white/[0.08] bg-white/[0.03] p-3"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/30 mb-2">
+                    Your trading address · deposit USDC.e here
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 font-mono text-[11px] text-white/60 break-all leading-snug">
+                      {safeAddress ?? eoaAddress}
+                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={copyAddress}
+                        title="Copy address"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70"
+                      >
+                        {copied ? <Check className="h-3 w-3 text-yes" /> : <Copy className="h-3 w-3" />}
+                      </button>
+                      <a
+                        href={`https://polygonscan.com/address/${safeAddress ?? eoaAddress}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="View on Polygonscan"
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/70"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[10px] text-white/25">
+                    Send USDC.e on Polygon to this address · your Safe on Gnosis
+                  </p>
+                </motion.div>
+              )}
 
               {/* Error */}
               {stepError && (
