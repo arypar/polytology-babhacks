@@ -2,15 +2,15 @@
 
 import { cn } from '@/lib/utils';
 
-const TABS = ['Intelligence', 'Builder', 'Sources', 'Executing', 'Users'] as const;
+const TABS = ['Dashboard', 'Intelligence', 'Builder', 'Sources', 'Executing'] as const;
 export type TabId = (typeof TABS)[number];
 
 const TAB_LABELS: Record<TabId, string> = {
+  Dashboard: 'Dashboard',
   Intelligence: 'Intelligence',
   Builder: 'Builder',
   Sources: 'Sources',
   Executing: 'Executing',
-  Users: 'Users',
 };
 
 interface AppTabsProps {

@@ -737,7 +737,6 @@ function NewsPanel({ market }: { market: PolymarketMarket }) {
 
 // ── Market Detail View ─────────────────────────────────────────────────────
 
-const TRADE_SIZE = 10;
 
 interface MarketDetailViewProps {
   market: PolymarketMarket;
@@ -765,25 +764,37 @@ export function MarketDetailView({
   const noPrice = no?.price ?? 0.5;
 
   const [tradeSide, setTradeSide] = useState<'YES' | 'NO' | null>(null);
+  const [tradeAmount, setTradeAmount] = useState('10');
   const [bought, setBought] = useState<'YES' | 'NO' | null>(null);
   const [isTrading, setIsTrading] = useState(false);
 
-  async function handleBuy(side: 'YES' | 'NO') {
+  function handleSideClick(side: 'YES' | 'NO') {
     if (sessionStatus !== 'ready') { onNeedOnboarding?.(); return; }
-    if (tradeSide !== side) { setTradeSide(side); return; }
-    if (!placeOrder) return;
+    if (tradeSide === side) {
+      setTradeSide(null);
+    } else {
+      setTradeSide(side);
+      setTradeAmount('10');
+    }
+  }
+
+  async function handleBuy() {
+    if (!placeOrder || !tradeSide) return;
+    const size = parseFloat(tradeAmount);
+    if (!size || size <= 0) { toast.error('Enter a valid amount'); return; }
 
     setIsTrading(true);
     try {
+      const side = tradeSide;
       const outcome = side === 'YES' ? yes : no;
       const price = side === 'YES' ? yesPrice : noPrice;
       const tokenId = outcome?.tokenId ?? market.conditionId;
-      const result = await placeOrder({ tokenId, side, price, size: TRADE_SIZE });
+      const result = await placeOrder({ tokenId, side, price, size });
       if (result) {
         setBought(side);
         setTradeSide(null);
         toast.success('Order placed', {
-          description: `${TRADE_SIZE} ${side} shares @ ${Math.round(price * 100)}¢`,
+          description: `$${size} ${side} @ ${Math.round(price * 100)}¢`,
         });
         if (eoaAddress) {
           recordTrade({
@@ -795,7 +806,7 @@ export function MarketDetailView({
             tokenId,
             side,
             price,
-            size: TRADE_SIZE,
+            size,
           });
         }
       }
@@ -807,7 +818,7 @@ export function MarketDetailView({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
       {/* ── Sticky header ── */}
       <div
@@ -899,62 +910,93 @@ export function MarketDetailView({
         {/* Trade buttons */}
         {market.active && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px' }}>
-            <button
-              disabled={isTrading}
-              onClick={() => handleBuy('YES')}
-              className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
-              style={
-                bought === 'YES'
-                  ? { backgroundColor: '#22c55e', color: '#000' }
-                  : tradeSide === 'YES'
-                  ? { backgroundColor: 'rgba(34,197,94,0.2)', color: '#22c55e', border: '1px solid #22c55e' }
-                  : { backgroundColor: 'rgba(34,197,94,0.08)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
-              }
-            >
-              {isTrading && tradeSide === 'YES'
-                ? <Loader2 className="inline h-3 w-3 animate-spin" />
-                : bought === 'YES' ? '✓ YES'
-                : tradeSide === 'YES' ? 'Confirm YES'
-                : `BUY YES ${(yesPrice * 100).toFixed(0)}¢`
-              }
-            </button>
-            <button
-              disabled={isTrading}
-              onClick={() => handleBuy('NO')}
-              className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
-              style={
-                bought === 'NO'
-                  ? { backgroundColor: '#ef4444', color: '#000' }
-                  : tradeSide === 'NO'
-                  ? { backgroundColor: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid #ef4444' }
-                  : { backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }
-              }
-            >
-              {isTrading && tradeSide === 'NO'
-                ? <Loader2 className="inline h-3 w-3 animate-spin" />
-                : bought === 'NO' ? '✓ NO'
-                : tradeSide === 'NO' ? 'Confirm NO'
-                : `BUY NO ${(noPrice * 100).toFixed(0)}¢`
-              }
-            </button>
-            <span className="terminal-label">$10 per trade</span>
+            {tradeSide ? (
+              <>
+                <span className="font-mono text-[10px] font-bold" style={{ color: tradeSide === 'YES' ? '#22c55e' : '#ef4444' }}>
+                  BUY {tradeSide}
+                </span>
+                <span className="font-mono text-[10px]" style={{ color: 'var(--text-tertiary)' }}>$</span>
+                <input
+                  autoFocus
+                  type="number"
+                  min="1"
+                  value={tradeAmount}
+                  onChange={e => setTradeAmount(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleBuy(); if (e.key === 'Escape') setTradeSide(null); }}
+                  className="font-mono text-[10px] font-bold w-16 px-2 py-1 bg-transparent border outline-none"
+                  style={{ color: 'var(--text)', borderColor: tradeSide === 'YES' ? '#22c55e' : '#ef4444' }}
+                  placeholder="10"
+                />
+                <button
+                  disabled={isTrading}
+                  onClick={handleBuy}
+                  className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
+                  style={tradeSide === 'YES'
+                    ? { backgroundColor: 'rgba(34,197,94,0.2)', color: '#22c55e', border: '1px solid #22c55e' }
+                    : { backgroundColor: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid #ef4444' }
+                  }
+                >
+                  {isTrading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : 'Confirm'}
+                </button>
+                <button
+                  onClick={() => setTradeSide(null)}
+                  className="font-mono text-[10px] px-2 py-1.5 transition-colors"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >✕</button>
+              </>
+            ) : (
+              <>
+                <button
+                  disabled={isTrading}
+                  onClick={() => handleSideClick('YES')}
+                  className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
+                  style={
+                    bought === 'YES'
+                      ? { backgroundColor: '#22c55e', color: '#000' }
+                      : { backgroundColor: 'rgba(34,197,94,0.08)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
+                  }
+                >
+                  {bought === 'YES' ? '✓ YES' : `BUY YES ${(yesPrice * 100).toFixed(0)}¢`}
+                </button>
+                <button
+                  disabled={isTrading}
+                  onClick={() => handleSideClick('NO')}
+                  className="font-mono text-[10px] font-bold px-3 py-1.5 transition-colors disabled:opacity-40"
+                  style={
+                    bought === 'NO'
+                      ? { backgroundColor: '#ef4444', color: '#000' }
+                      : { backgroundColor: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }
+                  }
+                >
+                  {bought === 'NO' ? '✓ NO' : `BUY NO ${(noPrice * 100).toFixed(0)}¢`}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {/* ── Main content grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', flex: 1, minHeight: 0 }}>
+      {/* ── Main content ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
-        {/* Left column: chart + news */}
-        <div style={{ borderRight: '1px solid var(--border)', overflow: 'auto' }}>
+        {/* Price chart: full width across the top */}
+        <div style={{ flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
           <PriceChart market={market} fullWidth />
-          <NewsPanel market={market} />
         </div>
 
-        {/* Right column: order book + alpha tips */}
-        <div style={{ overflow: 'auto' }}>
-          <OrderBookPanel conditionId={market.conditionId} />
-          <AlphaTipsPanel conditionId={market.conditionId} />
+        {/* Bottom row: order book + alpha left, news right — each column independently scrollable */}
+        <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+
+          {/* Left: order book stacked above alpha signals */}
+          <div style={{ borderRight: '1px solid var(--border)', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <OrderBookPanel conditionId={market.conditionId} />
+            <AlphaTipsPanel conditionId={market.conditionId} />
+          </div>
+
+          {/* Right: news feed fills remaining width */}
+          <div style={{ overflow: 'auto' }}>
+            <NewsPanel market={market} />
+          </div>
         </div>
       </div>
     </div>

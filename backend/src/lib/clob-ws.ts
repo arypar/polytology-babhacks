@@ -77,6 +77,11 @@ export function getLatestPrices(): Map<string, { yes: number; no: number }> {
   return latestPrices;
 }
 
+/** Return the latest YES/NO prices for a single conditionId, or null if unknown. */
+export function getLatestPrice(conditionId: string): { yes: number; no: number } | null {
+  return latestPrices.get(conditionId) ?? null;
+}
+
 // ── WebSocket management ───────────────────────────────────────────────────
 
 function sendSubscription(ids: string[]): void {

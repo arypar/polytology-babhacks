@@ -85,6 +85,7 @@ router.patch('/strategies/:id', async (req, res) => {
   if (req.body.isActive !== undefined)       updates.is_active       = req.body.isActive;
   if (req.body.marketId !== undefined)       updates.market_id       = req.body.marketId;
   if (req.body.marketQuestion !== undefined) updates.market_question = req.body.marketQuestion;
+  if (req.body.runtimeStatus !== undefined)  updates.runtime_status  = req.body.runtimeStatus;
 
   const { data, error } = await supabase
     .from('strategies')

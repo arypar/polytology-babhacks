@@ -203,6 +203,41 @@
   border-left: 2px solid var(--accent);
 }
 
+/* ── Grid-based market list rows (used by virtualized Intelligence tab) ── */
+.th {
+  padding: 4px 10px;
+  text-align: left;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.market-row {
+  cursor: pointer;
+  transition: background-color 0.08s;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  align-items: center;
+}
+.market-row:hover {
+  background-color: var(--bg-row-hover);
+}
+.market-row.row-selected {
+  background-color: rgba(22, 82, 240, 0.06);
+  border-left: 2px solid var(--accent) !important;
+}
+.market-cell {
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
 /* ── Price up/down ── */
 .price-up { color: #22c55e; }
 .price-down { color: #ef4444; }

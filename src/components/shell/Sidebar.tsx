@@ -3,10 +3,10 @@
 import { usePrivy } from '@privy-io/react-auth';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 import {
+  LayoutDashboard,
   BarChart2,
   Blocks,
   Activity,
-  Users2,
   Database,
   ChevronLeft,
   ChevronRight,
@@ -23,11 +23,11 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'Dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
   { id: 'Intelligence', label: 'Intelligence', icon: BarChart2 },
   { id: 'Builder',      label: 'Builder',      icon: Blocks    },
   { id: 'Sources',      label: 'Sources',      icon: Database  },
   { id: 'Executing',    label: 'Executing',    icon: Activity  },
-  { id: 'Users',        label: 'Users',        icon: Users2    },
 ];
 
 export function Sidebar({ active, onChange, collapsed, onCollapsedChange }: SidebarProps) {

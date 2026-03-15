@@ -88,6 +88,7 @@ export interface AutonomousStrategy {
   marketQuestion?: string;
   createdAt: number;
   updatedAt: number;
+  runtimeStatus?: StrategyStatus;
 }
 
 // ── Custom data sources ───────────────────────────────────────

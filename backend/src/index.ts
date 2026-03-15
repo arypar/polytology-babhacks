@@ -16,6 +16,7 @@ import fundingRouter from './routes/funding.js';
 import datasourcesRouter from './routes/datasources.js';
 import demoFeedsRouter from './routes/demo-feeds.js';
 import { setupWebSocket } from './lib/ws-server.js';
+import { startStrategyExecutor } from './lib/strategy-executor.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -66,4 +67,5 @@ setupWebSocket(server);
 server.listen(PORT, () => {
   console.log(`\x1b[36mBackend running on http://localhost:${PORT}\x1b[0m`);
   console.log(`\x1b[36mWebSocket available at ws://localhost:${PORT}/ws\x1b[0m`);
+  startStrategyExecutor();
 });

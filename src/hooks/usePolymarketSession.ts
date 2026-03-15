@@ -107,7 +107,8 @@ async function patchCredentials(eoa: string, updates: Partial<{
 
 // ── localStorage fallback (used as fast cache alongside DB) ──
 
-const CREDS_KEY = (eoa: string) => `polytology_creds_${eoa.toLowerCase()}`;
+const CREDS_KEY         = (eoa: string) => `polytology_creds_${eoa.toLowerCase()}`;
+const ONCHAIN_DONE_KEY  = (eoa: string) => `polytology_onchain_${eoa.toLowerCase()}`;
 
 function loadCredsLocal(eoa: string): ApiKeyCreds | null {
   try {
@@ -122,6 +123,21 @@ function saveCredsLocal(eoa: string, creds: ApiKeyCreds) {
   try {
     localStorage.setItem(CREDS_KEY(eoa), JSON.stringify(creds));
   } catch { /* ignore */ }
+}
+
+/** Marks that on-chain approvals are done so we can skip re-doing them on next load. */
+function markOnchainDoneLocal(eoa: string) {
+  try {
+    localStorage.setItem(ONCHAIN_DONE_KEY(eoa), '1');
+  } catch { /* ignore */ }
+}
+
+function isOnchainDoneLocal(eoa: string): boolean {
+  try {
+    return localStorage.getItem(ONCHAIN_DONE_KEY(eoa)) === '1';
+  } catch {
+    return false;
+  }
 }
 
 // ── Hook ──────────────────────────────────────────────────────
@@ -196,7 +212,7 @@ export function usePolymarketSession(): PolymarketSession {
         let tokensApproved = stored?.tokens_approved ?? false;
 
         let creds: ApiKeyCreds | null = null;
-        if (stored?.api_key) {
+        if (stored?.api_key && stored?.api_secret && stored?.api_passphrase) {
           creds = {
             key: stored.api_key,
             secret: stored.api_secret,
@@ -207,12 +223,54 @@ export function usePolymarketSession(): PolymarketSession {
         } else {
           // DB miss — try localStorage cache
           creds = loadCredsLocal(eoa);
+          // Validate all three fields are present to avoid undefined HMAC secret errors
+          if (creds && (!creds.key || !creds.secret || !creds.passphrase)) {
+            creds = null;
+          }
           // Creds are only written to localStorage after approveTokens() succeeds,
           // so if they exist the safe was deployed and tokens were approved.
           if (creds) {
             safeDeployed = true;
             tokensApproved = true;
           }
+        }
+
+        // tokensApproved can also come from the localStorage flag (survives backend restarts)
+        if (!tokensApproved && isOnchainDoneLocal(eoa)) {
+          tokensApproved = true;
+        }
+
+        if (!creds && tokensApproved) {
+          // On-chain approvals are done but API keys are missing (e.g. backend restart,
+          // cleared localStorage, or key-creation failed last time).  Auto-recover silently.
+          try {
+            const l1Client = createClobClientL1(wc);
+            let recovered: ApiKeyCreds;
+            try {
+              recovered = await l1Client.deriveApiKey() as ApiKeyCreds;
+            } catch {
+              recovered = await l1Client.createApiKey() as ApiKeyCreds;
+            }
+            if (recovered?.key && recovered?.secret && recovered?.passphrase) {
+              saveCredsLocal(eoa, recovered);
+              await saveCredentials({
+                eoaAddress: eoa,
+                apiKey: recovered.key,
+                apiSecret: recovered.secret,
+                apiPassphrase: recovered.passphrase,
+                safeAddress: safe,
+                safeDeployed: true,
+                tokensApproved: true,
+              });
+              clobClientRef.current = createClobClient(wc, recovered);
+              if (!cancelled) setStatus('ready');
+              return;
+            }
+          } catch (e) {
+            console.warn('[session] auto-recover API key failed, will re-prompt:', e);
+          }
+          if (!cancelled) setStatus('safe-deployed');
+          return;
         }
 
         if (!creds || !tokensApproved) {
@@ -294,6 +352,13 @@ export function usePolymarketSession(): PolymarketSession {
         );
       }
 
+      // On-chain approvals succeeded — persist this fact immediately so a subsequent
+      // key-creation failure doesn't force the user to redo on-chain work.
+      if (eoaAddress) {
+        markOnchainDoneLocal(eoaAddress);
+        await patchCredentials(eoaAddress, { safeAddress: safeAddress ?? undefined, safeDeployed: true, tokensApproved: true });
+      }
+
       // Create/derive API credentials and persist to DB + localStorage
       if (walletClientRef.current && eoaAddress) {
         const l1Client = createClobClientL1(walletClientRef.current);
@@ -302,6 +367,10 @@ export function usePolymarketSession(): PolymarketSession {
           creds = await l1Client.deriveApiKey() as ApiKeyCreds;
         } catch {
           creds = await l1Client.createApiKey() as ApiKeyCreds;
+        }
+
+        if (!creds.key || !creds.secret || !creds.passphrase) {
+          throw new Error('Polymarket returned incomplete API credentials');
         }
 
         // Save to localStorage cache
@@ -332,6 +401,9 @@ export function usePolymarketSession(): PolymarketSession {
   const placeOrder = useCallback(
     async (params: PlaceOrderParams): Promise<{ orderId: string } | null> => {
       if (!clobClientRef.current) throw new Error('Trading session not ready');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const clientCreds = (clobClientRef.current as any).creds;
+      if (!clientCreds?.secret) throw new Error('API credentials incomplete — please re-authenticate');
 
       const { tokenId, price, size, negRisk = false } = params;
 

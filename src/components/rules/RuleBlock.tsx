@@ -228,6 +228,8 @@ function MarketSearch({
                       marketName: m.question,
                       marketId: m.id,
                       marketSlug: m.slug,
+                      yesTokenId: m.outcomes.find(o => o.name.toLowerCase() === 'yes')?.tokenId ?? '',
+                      noTokenId:  m.outcomes.find(o => o.name.toLowerCase() === 'no')?.tokenId ?? '',
                     });
                     setQuery(m.question);
                     setOpen(false);

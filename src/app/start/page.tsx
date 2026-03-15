@@ -111,29 +111,6 @@ function FloatingParticles({ count = 10, seed = 0 }: { count?: number; seed?: nu
   );
 }
 
-function ProgressBar({ sceneIndex, total }: { sceneIndex: number; total: number }) {
-  return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
-      {Array.from({ length: total }).map((_, i) => {
-        const isActive = sceneIndex === i;
-        const isDone = sceneIndex > i;
-        return (
-          <motion.div
-            key={i}
-            className="rounded-full"
-            style={{
-              background: isActive ? "#2E5CFF" : isDone ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
-              boxShadow: isActive ? "0 0 10px rgba(46,92,255,0.5)" : "none",
-            }}
-            initial={false}
-            animate={{ width: isActive ? 28 : 8, height: 8 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 function TitleDropScene() {
   const [phase, setPhase] = useState<"pre" | "slam" | "shake" | "settled">("pre");
@@ -211,7 +188,7 @@ function TitleDropScene() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.3 }}
           >
-            The science of prediction markets
+            Predict. Automate. Win.
           </motion.p>
         )}
       </AnimatePresence>
@@ -773,7 +750,6 @@ function LaunchCtaScene() {
 }
 
 export default function StartPage() {
-  const router = useRouter();
   const [sceneIndex, setSceneIndex] = useState(0);
   const scene = SCENES[sceneIndex];
 
@@ -803,24 +779,6 @@ export default function StartPage() {
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden" style={{ background: "#07070E" }}>
-      <motion.button
-        onClick={() => router.push("/")}
-        className="absolute top-5 right-6 z-50 text-[11px] uppercase tracking-[0.2em] transition-colors cursor-pointer"
-        style={{ color: "rgba(255,255,255,0.35)" }}
-        whileHover={{ color: "rgba(255,255,255,0.6)" }}
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
-      >
-        Skip →
-      </motion.button>
-
-      <div className="absolute top-5 left-6 z-50">
-        <motion.div className="text-[10px] uppercase tracking-widest font-mono"
-          style={{ color: "rgba(255,255,255,0.15)" }}
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}>
-          {sceneIndex + 1}/{SCENES.length}
-        </motion.div>
-      </div>
-
       <div className="flex-1 relative">
         <AnimatePresence mode="wait">
           {scene === "titleDrop" && <TitleDropScene key="titleDrop" />}
@@ -831,7 +789,6 @@ export default function StartPage() {
         </AnimatePresence>
       </div>
 
-      <ProgressBar sceneIndex={sceneIndex} total={SCENES.length} />
     </div>
   );
 }

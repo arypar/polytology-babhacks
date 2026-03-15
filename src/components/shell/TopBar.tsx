@@ -2,12 +2,24 @@
 
 import { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { LogIn, LogOut, Settings, Copy, Check } from 'lucide-react';
+import { LogIn, LogOut, Settings, Copy, Check, LayoutDashboard, BarChart2, Blocks, Database, Activity, Users2 } from 'lucide-react';
+import Image from 'next/image';
 import { NotificationBell } from './NotificationBell';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
+import type { TabId } from './AppTabs';
+
+const NAV_ITEMS: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'Dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
+  { id: 'Intelligence', label: 'Intelligence', icon: BarChart2 },
+  { id: 'Builder',      label: 'Builder',      icon: Blocks },
+  { id: 'Sources',      label: 'Sources',      icon: Database },
+  { id: 'Executing',    label: 'Executing',    icon: Activity },
+  { id: 'Users',        label: 'Users',        icon: Users2 },
+];
 
 interface TopBarProps {
-  pageTitle: string;
+  activeTab: TabId;
+  onTabChange: (tab: TabId) => void;
   onSetupWallet?: () => void;
 }
 
@@ -38,7 +50,7 @@ function LiveClock() {
   );
 }
 
-export function TopBar({ pageTitle, onSetupWallet }: TopBarProps) {
+export function TopBar({ activeTab, onTabChange, onSetupWallet }: TopBarProps) {
   const { login, logout, authenticated, user } = usePrivy();
   const { status, safeAddress, eoaAddress } = usePolymarketSession();
   const [copied, setCopied] = useState(false);
@@ -62,39 +74,86 @@ export function TopBar({ pageTitle, onSetupWallet }: TopBarProps) {
     });
   };
 
-  // Hide during initial session load (status=idle while authenticated means still checking)
   const isSetupNeeded = authenticated && status !== 'ready' && status !== 'idle';
 
   return (
     <header
-      className="sticky top-0 z-30 flex h-10 items-center gap-3 px-3"
+      className="sticky top-0 z-30 flex h-11 items-center gap-0 px-0 shrink-0"
       style={{
         backgroundColor: 'var(--bg-elevated)',
         borderBottom: '1px solid var(--border)',
       }}
     >
-      {/* Page title */}
-      <span
-        className="font-mono text-[11px] font-semibold tracking-wide"
-        style={{ color: 'var(--accent)' }}
+      {/* Logo + brand */}
+      <div
+        className="flex h-full items-center gap-2 px-4 shrink-0"
+        style={{ borderRight: '1px solid var(--border)' }}
       >
-        {pageTitle}
-      </span>
+        <Image src="/logos/icon-white.svg" alt="Polytology" width={13} height={13} priority />
+        <span
+          className="font-mono text-[11px] font-bold tracking-[0.06em] uppercase"
+          style={{ color: 'var(--accent)' }}
+        >
+          POLYTOLOGY
+        </span>
+      </div>
 
-      {/* Divider */}
-      <span className="h-3 w-px" style={{ backgroundColor: 'var(--border-strong)' }} />
-
-      {/* Live clock */}
-      <LiveClock />
+      {/* Nav tabs */}
+      <nav className="flex h-full items-stretch">
+        {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+          const isActive = activeTab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onTabChange(id)}
+              className="relative flex h-full items-center gap-1.5 px-3.5 transition-colors"
+              style={{
+                backgroundColor: isActive ? 'rgba(245,158,11,0.06)' : 'transparent',
+                color: isActive ? 'var(--accent)' : 'var(--text-tertiary)',
+                borderRight: '1px solid var(--border)',
+              }}
+              onMouseEnter={e => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)';
+                  e.currentTarget.style.color = 'var(--text-secondary)';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = 'var(--text-tertiary)';
+                }
+              }}
+            >
+              {/* Active bottom indicator */}
+              {isActive && (
+                <span
+                  className="absolute bottom-0 left-0 right-0 h-0.5"
+                  style={{ backgroundColor: 'var(--accent)' }}
+                />
+              )}
+              <Icon className="h-3 w-3 shrink-0" />
+              <span className="font-mono text-[10px] font-medium">{label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Spacer */}
       <div className="flex-1" />
 
       {/* Right controls */}
-      <div className="flex items-center gap-1.5">
+      <div
+        className="flex h-full items-center gap-1.5 px-3"
+        style={{ borderLeft: '1px solid var(--border)' }}
+      >
+        {/* Live clock */}
+        <LiveClock />
+
+        <span className="h-3 w-px" style={{ backgroundColor: 'var(--border-strong)' }} />
+
         <NotificationBell />
 
-        {/* Divider */}
         <span className="h-3 w-px" style={{ backgroundColor: 'var(--border)' }} />
 
         {/* Setup wallet nudge */}

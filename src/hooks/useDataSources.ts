@@ -4,37 +4,17 @@ import { useState, useEffect, useCallback } from 'react';
 import type { CustomDataSource } from '@/lib/types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:4000';
-const LS_KEY = 'pm-datasources';
-
-function loadCache(): CustomDataSource[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as CustomDataSource[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCache(sources: CustomDataSource[]) {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(sources));
-  } catch {}
-}
 
 export function useDataSources() {
   const [sources, setSources] = useState<CustomDataSource[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const cached = loadCache();
-    if (cached.length > 0) setSources(cached);
-
     setLoading(true);
     fetch(`${BACKEND}/api/datasources`)
       .then(r => r.json())
       .then((data: CustomDataSource[]) => {
         setSources(data);
-        saveCache(data);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -47,21 +27,13 @@ export function useDataSources() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSource),
     });
-    setSources(prev => {
-      const updated = [...prev, newSource];
-      saveCache(updated);
-      return updated;
-    });
+    setSources(prev => [...prev, newSource]);
     return newSource;
   }, []);
 
   const removeSource = useCallback(async (id: string) => {
     await fetch(`${BACKEND}/api/datasources/${id}`, { method: 'DELETE' });
-    setSources(prev => {
-      const updated = prev.filter(s => s.id !== id);
-      saveCache(updated);
-      return updated;
-    });
+    setSources(prev => prev.filter(s => s.id !== id));
   }, []);
 
   const fetchSourceValue = useCallback(async (id: string): Promise<{ value: unknown; error?: string }> => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -16,6 +16,9 @@ import { BlockPalette } from './BlockPalette';
 import { RuleCanvas } from './RuleCanvas';
 import { PALETTE_ITEMS, CATEGORY_META, type PaletteItem, type CanvasBlock } from './block-types';
 import { useDataSources } from '@/hooks/useDataSources';
+import { usePrivy } from '@privy-io/react-auth';
+import { useStrategies } from '@/lib/store';
+import type { AutonomousStrategy } from '@/lib/types';
 
 // ── Drag overlay ghost pill ───────────────────────────────────
 function DragOverlayBlock({ item }: { item: PaletteItem | CanvasBlock }) {
@@ -45,15 +48,54 @@ interface RulesTabProps {
   onNavigateToSources?: () => void;
 }
 
+const DRAFT_KEY = 'pm-rule-draft';
+
+interface RuleDraft {
+  blocks: CanvasBlock[];
+  conditionLogic: 'AND' | 'OR';
+  ruleName: string;
+}
+
+function loadDraft(): RuleDraft {
+  if (typeof window === 'undefined') return { blocks: [], conditionLogic: 'AND', ruleName: '' };
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as RuleDraft) : { blocks: [], conditionLogic: 'AND', ruleName: '' };
+  } catch {
+    return { blocks: [], conditionLogic: 'AND', ruleName: '' };
+  }
+}
+
+function saveDraft(draft: RuleDraft) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* ignore */ }
+}
+
+function clearDraft() {
+  if (typeof window === 'undefined') return;
+  try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+}
+
 export function RulesTab({ onNavigateToSources }: RulesTabProps) {
-  const [blocks, setBlocks] = useState<CanvasBlock[]>([]);
-  const [conditionLogic, setConditionLogic] = useState<'AND' | 'OR'>('AND');
-  const [ruleName, setRuleName] = useState('');
+  const [blocks, setBlocks] = useState<CanvasBlock[]>(() => loadDraft().blocks);
+  const [conditionLogic, setConditionLogic] = useState<'AND' | 'OR'>(() => loadDraft().conditionLogic);
+  const [ruleName, setRuleName] = useState<string>(() => loadDraft().ruleName);
   const [activeDrag, setActiveDrag] = useState<{
     item: PaletteItem | CanvasBlock;
   } | null>(null);
+  const [activating, setActivating] = useState(false);
+  const [activated, setActivated] = useState(false);
 
-  const { sources, addSource, removeSource, fetchSourceValue } = useDataSources();
+  // Persist draft to localStorage whenever it changes
+  useEffect(() => {
+    saveDraft({ blocks, conditionLogic, ruleName });
+  }, [blocks, conditionLogic, ruleName]);
+
+  const { user } = usePrivy();
+  const eoaAddress = user?.wallet?.address ?? null;
+  const { addStrategy } = useStrategies(eoaAddress);
+
+  const { sources, removeSource, fetchSourceValue } = useDataSources();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
@@ -167,9 +209,40 @@ export function RulesTab({ onNavigateToSources }: RulesTabProps) {
     [blocks, addBlock]
   );
 
+  const marketBlock = blocks.find(b => b.category === 'market');
   const canActivate =
-    blocks.some(b => b.category === 'market') &&
-    blocks.some(b => b.category === 'action');
+    !!marketBlock &&
+    !!marketBlock.config.marketId &&
+    blocks.some(b => b.category === 'action') &&
+    !!eoaAddress;
+
+  const handleActivate = useCallback(async () => {
+    if (!canActivate || !eoaAddress || !marketBlock) return;
+    setActivating(true);
+
+    const now = Date.now();
+    const strategy: AutonomousStrategy = {
+      id: crypto.randomUUID(),
+      name: ruleName.trim() || `Rule — ${String(marketBlock.config.marketName).slice(0, 40)}`,
+      blocks: blocks as unknown as AutonomousStrategy['blocks'],
+      enabled: true,
+      marketId: String(marketBlock.config.marketId),
+      marketQuestion: String(marketBlock.config.marketName),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    addStrategy(strategy);
+    setActivating(false);
+    setActivated(true);
+
+    setTimeout(() => {
+      setActivated(false);
+      setBlocks([]);
+      setRuleName('');
+      clearDraft();
+    }, 2000);
+  }, [canActivate, eoaAddress, marketBlock, ruleName, blocks, addStrategy]);
 
   return (
     <DndContext
@@ -192,10 +265,10 @@ export function RulesTab({ onNavigateToSources }: RulesTabProps) {
           onConditionLogicChange={setConditionLogic}
           onRemoveBlock={removeBlock}
           onUpdateBlockConfig={updateBlockConfig}
-          canActivate={canActivate}
-          onActivate={() => {
-            console.log('Rule activated:', { name: ruleName, blocks });
-          }}
+          canActivate={canActivate && !activating && !activated}
+          onActivate={handleActivate}
+          activating={activating}
+          activated={activated}
           sources={sources}
           fetchSourceValue={fetchSourceValue}
         />

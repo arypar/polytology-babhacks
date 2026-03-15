@@ -206,24 +206,35 @@ function computeRuntimes(
   strategies: AutonomousStrategy[],
   trades: ExecutingTrade[]
 ): StrategyRuntime[] {
-  const activeStrategies = strategies.filter(s => s.enabled);
+  // Handle both camelCase (localStorage cache) and snake_case (raw DB rows)
+  type AnyStrategy = AutonomousStrategy & Record<string, unknown>;
+  const activeStrategies = strategies.filter(s => {
+    const row = s as AnyStrategy;
+    return row.enabled ?? row.is_active;
+  });
   if (activeStrategies.length === 0) return [];
 
   return activeStrategies.map(s => {
+    const row = s as AnyStrategy;
+    const runtimeStatus: StrategyStatus =
+      (row.runtimeStatus as StrategyStatus) ??
+      (row.runtime_status as StrategyStatus) ??
+      'running';
     const stratTrades = trades.filter(t => t.strategyId === s.id && t.status === 'filled');
     const totalDeployed = stratTrades.reduce((sum, t) => sum + t.entryPrice * t.shares, 0);
     const realizedPnl = stratTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
     const wins = stratTrades.filter(t => (t.pnl ?? 0) > 0).length;
+    const createdAt = (row.createdAt as number) ?? new Date(row.created_at as string).getTime();
     return {
       strategyId: s.id,
       strategyName: s.name,
-      status: 'running' as StrategyStatus,
+      status: runtimeStatus,
       tradesExecuted: stratTrades.length,
       totalDeployed,
       realizedPnl,
       unrealizedPnl: 0,
       winRate: stratTrades.length > 0 ? wins / stratTrades.length : 0,
-      startedAt: s.createdAt,
+      startedAt: createdAt,
       lastTradeAt: stratTrades.length > 0
         ? Math.max(...stratTrades.map(t => t.timestamp))
         : undefined,
@@ -233,35 +244,40 @@ function computeRuntimes(
 
 
 export function useExecutingTrades(eoaAddress?: string | null, isActive = true) {
+  const eoa = eoaAddress?.toLowerCase() ?? '';
   const [trades, setTrades] = useState<ExecutingTrade[]>([]);
   const [runtimes, setRuntimes] = useState<StrategyRuntime[]>([]);
   const [usingRealData, setUsingRealData] = useState(false);
 
   // Fetch real strategies + trades when we have an EOA address
   useEffect(() => {
-    if (!eoaAddress) return;
+    if (!eoa) return;
 
     let cancelled = false;
 
     (async () => {
       const [dbTrades, dbStrategies] = await Promise.all([
-        apiFetch<DbTrade[]>(`/api/trades?eoa=${eoaAddress}&limit=100`),
-        apiFetch<AutonomousStrategy[]>(`/api/strategies?eoa=${eoaAddress}`),
+        apiFetch<DbTrade[]>(`/api/trades?eoa=${eoa}&limit=100`),
+        apiFetch<AutonomousStrategy[]>(`/api/strategies?eoa=${eoa}`),
       ]);
 
       if (cancelled) return;
 
-      if (dbTrades && dbTrades.length > 0) {
-        const strategyMap = new Map((dbStrategies ?? []).map(s => [s.id, s.name]));
-        const mapped = dbTrades.map(t => dbTradeToExecutingTrade(t, strategyMap.get(t.strategy_id ?? '') ?? undefined));
-        setTrades(mapped);
-        setRuntimes(computeRuntimes(dbStrategies ?? [], mapped));
+      const strategies = dbStrategies ?? [];
+      const strategyMap = new Map(strategies.map(s => [s.id, s.name]));
+      const mapped = (dbTrades ?? []).map(t =>
+        dbTradeToExecutingTrade(t, strategyMap.get(t.strategy_id ?? '') ?? undefined)
+      );
+
+      if (mapped.length > 0) setTrades(mapped);
+      if (strategies.length > 0 || mapped.length > 0) {
+        setRuntimes(computeRuntimes(strategies, mapped));
         setUsingRealData(true);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [eoaAddress]);
+  }, [eoa]);
 
   // Live price simulation — only runs when the Executing tab is visible
   useEffect(() => {
@@ -291,19 +307,22 @@ export function useExecutingTrades(eoaAddress?: string | null, isActive = true) 
     setRuntimes(prev =>
       prev.map(r => r.strategyId === strategyId ? { ...r, status: 'paused' as StrategyStatus } : r)
     );
-  }, []);
+    if (eoa) apiPatch(`/api/strategies/${strategyId}?eoa=${eoa}`, { runtimeStatus: 'paused' });
+  }, [eoa]);
 
   const stopStrategy = useCallback((strategyId: string) => {
     setRuntimes(prev =>
       prev.map(r => r.strategyId === strategyId ? { ...r, status: 'stopped' as StrategyStatus } : r)
     );
-  }, []);
+    if (eoa) apiPatch(`/api/strategies/${strategyId}?eoa=${eoa}`, { runtimeStatus: 'stopped' });
+  }, [eoa]);
 
   const resumeStrategy = useCallback((strategyId: string) => {
     setRuntimes(prev =>
       prev.map(r => r.strategyId === strategyId ? { ...r, status: 'running' as StrategyStatus } : r)
     );
-  }, []);
+    if (eoa) apiPatch(`/api/strategies/${strategyId}?eoa=${eoa}`, { runtimeStatus: 'running' });
+  }, [eoa]);
 
   return { trades, runtimes, usingRealData, updateTradeStatus, pauseStrategy, stopStrategy, resumeStrategy };
 }

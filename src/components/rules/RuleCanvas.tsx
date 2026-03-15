@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CATEGORY_META, type CanvasBlock } from './block-types';
 import { RuleBlock } from './RuleBlock';
@@ -377,6 +378,8 @@ interface RuleCanvasProps {
   onUpdateBlockConfig: (id: string, config: Record<string, string | number>) => void;
   canActivate: boolean;
   onActivate: () => void;
+  activating?: boolean;
+  activated?: boolean;
   sources?: CustomDataSource[];
   fetchSourceValue?: (id: string) => Promise<{ value: unknown; error?: string }>;
 }
@@ -391,6 +394,8 @@ export function RuleCanvas({
   onUpdateBlockConfig,
   canActivate,
   onActivate,
+  activating = false,
+  activated = false,
   sources,
   fetchSourceValue,
 }: RuleCanvasProps) {
@@ -478,26 +483,37 @@ export function RuleCanvas({
 
       {/* Activate Rule button */}
       <button
-        disabled={!canActivate}
-        onClick={canActivate ? onActivate : undefined}
+        disabled={!canActivate || activating || activated}
+        onClick={canActivate && !activating && !activated ? onActivate : undefined}
         className={cn(
-          'w-full rounded-xl h-10 text-[13px] font-semibold transition-all duration-200',
-          canActivate
+          'w-full rounded-xl h-10 text-[13px] font-semibold transition-all duration-200 flex items-center justify-center gap-2',
+          activated
+            ? 'text-white'
+            : canActivate && !activating
             ? 'text-white hover:opacity-90'
             : 'text-white/20 cursor-not-allowed'
         )}
         style={
-          canActivate
-            ? {
-                backgroundColor: '#FF007A',
-                boxShadow: '0 0 20px rgba(255,0,122,0.2)',
-              }
-            : {
-                backgroundColor: 'rgba(255,255,255,0.04)',
-              }
+          activated
+            ? { backgroundColor: '#10b981', boxShadow: '0 0 20px rgba(16,185,129,0.25)' }
+            : canActivate && !activating
+            ? { backgroundColor: '#FF007A', boxShadow: '0 0 20px rgba(255,0,122,0.2)' }
+            : { backgroundColor: 'rgba(255,255,255,0.04)' }
         }
       >
-        Activate Rule
+        {activating ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Activating…
+          </>
+        ) : activated ? (
+          <>
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Rule Activated!
+          </>
+        ) : (
+          'Activate Rule'
+        )}
       </button>
     </div>
   );

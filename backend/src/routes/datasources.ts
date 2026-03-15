@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { supabase, DB_ENABLED } from '../lib/supabase.js';
 import { log } from '../lib/log.js';
 
 const router = Router();
@@ -13,10 +14,23 @@ interface CustomDataSource {
   refreshMs: number;
 }
 
-const sources = new Map<string, CustomDataSource>();
+// In-memory fallback when Supabase is not configured
+const mem = new Map<string, CustomDataSource>();
 
 // Cache of proxy-fetched values: sourceId → { value, fetchedAt }
 const fetchCache = new Map<string, { value: unknown; fetchedAt: number }>();
+
+function dbRowToSource(row: Record<string, unknown>): CustomDataSource {
+  return {
+    id:          row.id as string,
+    name:        row.name as string,
+    url:         row.url as string,
+    headers:     (row.headers as Record<string, string>) ?? {},
+    valuePath:   row.value_path as string,
+    description: (row.description as string) ?? '',
+    refreshMs:   (row.refresh_ms as number) ?? 60_000,
+  };
+}
 
 /**
  * Walk a dot-notation path through an object.
@@ -33,31 +47,64 @@ function getByPath(obj: unknown, path: string): unknown {
   return cur;
 }
 
-router.get('/datasources', (_req, res) => {
-  res.json([...sources.values()]);
+router.get('/datasources', async (_req, res) => {
+  if (!DB_ENABLED || !supabase) {
+    return res.json([...mem.values()]);
+  }
+
+  const { data, error } = await supabase
+    .from('data_sources')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json((data ?? []).map(dbRowToSource));
 });
 
-router.post('/datasources', (req, res) => {
+router.post('/datasources', async (req, res) => {
   const source = req.body as CustomDataSource;
   if (!source?.id || !source?.url || !source?.valuePath) {
     res.status(400).json({ error: 'Missing required fields: id, url, valuePath' });
     return;
   }
-  source.headers = source.headers ?? {};
-  source.refreshMs = source.refreshMs ?? 60_000;
+  source.headers     = source.headers ?? {};
+  source.refreshMs   = source.refreshMs ?? 60_000;
   source.description = source.description ?? '';
-  sources.set(source.id, source);
+
+  if (!DB_ENABLED || !supabase) {
+    mem.set(source.id, source);
+    log('datasources', `POST /datasources (mem) — "${source.name}" (id=${source.id.slice(0, 8)})`);
+    return res.json({ ok: true });
+  }
+
+  const { error } = await supabase.from('data_sources').upsert({
+    id:          source.id,
+    name:        source.name,
+    url:         source.url,
+    headers:     source.headers,
+    value_path:  source.valuePath,
+    description: source.description,
+    refresh_ms:  source.refreshMs,
+  }, { onConflict: 'id' });
+
+  if (error) return res.status(500).json({ error: error.message });
   log('datasources', `POST /datasources — "${source.name}" (id=${source.id.slice(0, 8)})`);
   res.json({ ok: true });
 });
 
-router.delete('/datasources/:id', (req, res) => {
+router.delete('/datasources/:id', async (req, res) => {
   const { id } = req.params;
-  if (!sources.has(id)) {
-    res.status(404).json({ error: 'Data source not found' });
-    return;
+
+  if (!DB_ENABLED || !supabase) {
+    if (!mem.has(id)) return res.status(404).json({ error: 'Data source not found' });
+    mem.delete(id);
+    fetchCache.delete(id);
+    log('datasources', `DELETE /datasources/${id.slice(0, 8)} (mem)`);
+    return res.json({ ok: true });
   }
-  sources.delete(id);
+
+  const { error } = await supabase.from('data_sources').delete().eq('id', id);
+  if (error) return res.status(500).json({ error: error.message });
   fetchCache.delete(id);
   log('datasources', `DELETE /datasources/${id.slice(0, 8)}`);
   res.json({ ok: true });
@@ -100,7 +147,17 @@ router.post('/datasources/test', async (req, res) => {
 
 router.get('/datasources/:id/fetch', async (req, res) => {
   const { id } = req.params;
-  const source = sources.get(id);
+
+  // Resolve source from DB or memory
+  let source: CustomDataSource | undefined;
+
+  if (!DB_ENABLED || !supabase) {
+    source = mem.get(id);
+  } else {
+    const { data } = await supabase.from('data_sources').select('*').eq('id', id).single();
+    if (data) source = dbRowToSource(data as Record<string, unknown>);
+  }
+
   if (!source) {
     res.status(404).json({ error: 'Data source not found' });
     return;

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
 import { Search, RefreshCw, TrendingUp, TrendingDown, ChevronUp, ChevronDown } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { MarketCard } from './MarketCard';
 import { MarketDetailView } from './MarketDetailView';
 import { fetchMarkets, CATEGORIES } from '@/lib/polymarket-data';
@@ -9,9 +10,14 @@ import type { PolymarketMarket, MarketCategory } from '@/lib/types';
 import { useLivePricesCtx } from '@/lib/LivePricesContext';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import type { PolymarketSession } from '@/hooks/usePolymarketSession';
 
 type SortKey = 'yesPrice' | 'volume' | 'liquidity' | 'closes' | null;
 type SortDir = 'asc' | 'desc';
+
+// Shared grid template — must match MarketCard's GRID_COLS constant
+export const GRID_COLS = '40px 1fr 80px 54px 54px 72px 72px 72px 52px 180px';
+export const ROW_HEIGHT = 36;
 
 function fmt(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -26,6 +32,156 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
     : <ChevronDown className="inline h-2.5 w-2.5 ml-0.5" />;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// VirtualMarketList — isolated component that owns the live-price subscription.
+// Only this component (and its visible ~20 rows) re-renders on WS price ticks;
+// the parent tab with its stats strip and filter bar stays untouched.
+// ─────────────────────────────────────────────────────────────────────────────
+interface VirtualMarketListProps {
+  filtered: PolymarketMarket[];
+  loading: boolean;
+  markets: PolymarketMarket[];
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+  onSelectMarket: (m: PolymarketMarket) => void;
+  sessionStatus: PolymarketSession['status'];
+  placeOrder: PolymarketSession['placeOrder'];
+  eoaAddress: PolymarketSession['eoaAddress'];
+  safeAddress: PolymarketSession['safeAddress'];
+  onNeedOnboarding: () => void;
+}
+
+const VirtualMarketList = memo(function VirtualMarketList({
+  filtered,
+  loading,
+  markets,
+  sortKey,
+  sortDir,
+  onSort,
+  onSelectMarket,
+  sessionStatus,
+  placeOrder,
+  eoaAddress,
+  safeAddress,
+  onNeedOnboarding,
+}: VirtualMarketListProps) {
+  // This is the ONLY place that subscribes to live prices.
+  // The parent tab does NOT subscribe, so it won't re-render on price ticks.
+  const livePrices = useLivePricesCtx();
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 8,
+  });
+
+  const thStyle: React.CSSProperties = { cursor: 'pointer', userSelect: 'none' };
+
+  return (
+    <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      {/* Sticky header row */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: GRID_COLS,
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+          backgroundColor: 'var(--bg-elevated)',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <div className="th" style={{ paddingLeft: 10 }}>#</div>
+        <div className="th">Market</div>
+        <div className="th">Category</div>
+        <div className="th" style={{ ...thStyle }} onClick={() => onSort('yesPrice')}>
+          Yes <SortIcon col="yesPrice" sortKey={sortKey} sortDir={sortDir} />
+        </div>
+        <div className="th">No</div>
+        <div className="th" style={{ ...thStyle }} onClick={() => onSort('volume')}>
+          Vol 24h <SortIcon col="volume" sortKey={sortKey} sortDir={sortDir} />
+        </div>
+        <div className="th" style={{ ...thStyle }} onClick={() => onSort('liquidity')}>
+          Liquidity <SortIcon col="liquidity" sortKey={sortKey} sortDir={sortDir} />
+        </div>
+        <div className="th" style={{ ...thStyle }} onClick={() => onSort('closes')}>
+          Closes <SortIcon col="closes" sortKey={sortKey} sortDir={sortDir} />
+        </div>
+        <div className="th">Status</div>
+        <div className="th">Trade</div>
+      </div>
+
+      {loading ? (
+        <div>
+          {Array.from({ length: 14 }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: GRID_COLS,
+                height: ROW_HEIGHT,
+                borderBottom: '1px solid var(--border)',
+                alignItems: 'center',
+              }}
+            >
+              {Array.from({ length: 10 }).map((__, j) => (
+                <div key={j} style={{ padding: '0 8px' }}>
+                  <div className="skeleton h-3 w-full" style={{ opacity: 0.4 }} />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120 }}>
+          <span className="terminal-label">
+            {markets.length === 0 ? 'Backend not responding' : 'No results'}
+          </span>
+        </div>
+      ) : (
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+          {rowVirtualizer.getVirtualItems().map(vr => {
+            const market = filtered[vr.index];
+            return (
+              <div
+                key={market.id}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${vr.start}px)`,
+                }}
+              >
+                <MarketCard
+                  market={market}
+                  selected={false}
+                  onClick={onSelectMarket}
+                  livePrice={livePrices[market.conditionId]}
+                  index={vr.index}
+                  sessionStatus={sessionStatus}
+                  placeOrder={placeOrder}
+                  eoaAddress={eoaAddress}
+                  safeAddress={safeAddress}
+                  onNeedOnboarding={onNeedOnboarding}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main tab — manages data fetching, filtering, sorting, and layout.
+// Does NOT subscribe to live prices, so it only re-renders on meaningful
+// state changes (filter, sort, market data), not on every WS tick.
+// ─────────────────────────────────────────────────────────────────────────────
 export function PolymarketIntelligenceTab() {
   const [markets, setMarkets] = useState<PolymarketMarket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,14 +192,15 @@ export function PolymarketIntelligenceTab() {
   const [sortKey, setSortKey] = useState<SortKey>('volume');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const livePrices = useLivePricesCtx();
+
+
   const { status: sessionStatus, placeOrder, eoaAddress, safeAddress } = usePolymarketSession();
   const handleNeedOnboarding = useCallback(() => setShowOnboarding(true), []);
 
   const loadMarkets = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchMarkets({ limit: 1000 })
+    fetchMarkets({ limit: 300 })
       .then((data) => {
         if (data.length === 0) {
           setError('No markets returned — is the backend running?');
@@ -58,9 +215,6 @@ export function PolymarketIntelligenceTab() {
 
   useEffect(() => { loadMarkets(); }, [loadMarkets]);
 
-  // Only pull live prices into sort deps when actually sorting by yes price
-  const lpForSort = sortKey === 'yesPrice' ? livePrices : null;
-
   const filtered = useMemo(() => {
     let list = markets;
     if (selectedCategory !== 'All') list = list.filter(m => m.category === selectedCategory);
@@ -72,8 +226,9 @@ export function PolymarketIntelligenceTab() {
       list = [...list].sort((a, b) => {
         let va = 0, vb = 0;
         if (sortKey === 'yesPrice') {
-          va = lpForSort?.[a.conditionId]?.yes ?? a.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
-          vb = lpForSort?.[b.conditionId]?.yes ?? b.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
+          // Use static market outcome price (live prices live in VirtualMarketList)
+          va = a.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
+          vb = b.outcomes.find(o => o.name === 'Yes')?.price ?? 0.5;
         } else if (sortKey === 'volume') {
           va = a.volume24h; vb = b.volume24h;
         } else if (sortKey === 'liquidity') {
@@ -85,7 +240,7 @@ export function PolymarketIntelligenceTab() {
       });
     }
     return list;
-  }, [markets, selectedCategory, search, sortKey, sortDir, lpForSort]);
+  }, [markets, selectedCategory, search, sortKey, sortDir]);
 
   const totalVolume = useMemo(() => markets.reduce((s, m) => s + m.volume24h, 0), [markets]);
   const totalLiquidity = useMemo(() => markets.reduce((s, m) => s + m.liquidity, 0), [markets]);
@@ -96,20 +251,16 @@ export function PolymarketIntelligenceTab() {
 
   const handleSelectMarket = useCallback((market: PolymarketMarket) => setSelectedMarket(market), []);
 
-  function handleSort(key: SortKey) {
-    if (key === 'live') {
-      // Toggle live sort on/off
-      setSortKey(prev => prev === 'live' ? null : 'live');
-      setSortDir('desc');
-    } else if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortDir('desc');
-    }
-  }
-
-  const thStyle: React.CSSProperties = { cursor: 'pointer', userSelect: 'none' };
+  const handleSort = useCallback((key: SortKey) => {
+    setSortKey(prev => {
+      if (prev === key) return prev; // direction toggled separately
+      return key;
+    });
+    setSortDir(prev => {
+      if (sortKey === key) return prev === 'asc' ? 'desc' : 'asc';
+      return 'desc';
+    });
+  }, [sortKey]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', height: 'calc(100vh - 40px)' }}>
@@ -175,7 +326,6 @@ export function PolymarketIntelligenceTab() {
           flexWrap: 'wrap',
         }}
       >
-        {/* Search */}
         <div style={{ position: 'relative', flex: '0 0 220px' }}>
           <Search
             className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3"
@@ -200,7 +350,6 @@ export function PolymarketIntelligenceTab() {
           />
         </div>
 
-        {/* Category toggles */}
         <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
           {(['All', ...CATEGORIES] as const).map(cat => {
             const isActive = selectedCategory === cat;
@@ -247,7 +396,7 @@ export function PolymarketIntelligenceTab() {
 
       {/* ── Full-screen detail view ── */}
       {selectedMarket ? (
-        <div style={{ flex: 1, overflow: 'auto', backgroundColor: 'var(--bg)' }}>
+        <div style={{ flex: 1, overflow: 'hidden', minHeight: 0, backgroundColor: 'var(--bg)' }}>
           <MarketDetailView
             market={selectedMarket}
             onBack={() => setSelectedMarket(null)}
@@ -259,74 +408,25 @@ export function PolymarketIntelligenceTab() {
           />
         </div>
       ) : (
-        /* ── Market table (selector) ── */
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <table className="terminal-table" style={{ width: '100%' }}>
-            <thead>
-              <tr>
-                <th>Market</th>
-                <th style={{ width: 80 }}>Category</th>
-                <th style={{ ...thStyle, width: 54 }} onClick={() => handleSort('yesPrice')}>
-                  Yes <SortIcon col="yesPrice" sortKey={sortKey} sortDir={sortDir} />
-                </th>
-                <th style={{ width: 54 }}>No</th>
-                <th style={{ ...thStyle, width: 72 }} onClick={() => handleSort('volume')}>
-                  Vol 24h <SortIcon col="volume" sortKey={sortKey} sortDir={sortDir} />
-                </th>
-                <th style={{ ...thStyle, width: 72 }} onClick={() => handleSort('liquidity')}>
-                  Liquidity <SortIcon col="liquidity" sortKey={sortKey} sortDir={sortDir} />
-                </th>
-                <th style={{ ...thStyle, width: 72 }} onClick={() => handleSort('closes')}>
-                  Closes <SortIcon col="closes" sortKey={sortKey} sortDir={sortDir} />
-                </th>
-                <th style={{ width: 60 }}>Status</th>
-                <th style={{ width: 96 }}>Trade</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 12 }).map((_, i) => (
-                  <tr key={i}>
-                    {Array.from({ length: 9 }).map((__, j) => (
-                      <td key={j}>
-                        <div className="skeleton h-3 w-full" style={{ opacity: 0.5 }} />
-                      </td>
-                    ))}
-                    <td />
-                  </tr>
-                ))
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="text-center py-12">
-                    <span className="terminal-label">
-                      {markets.length === 0 ? 'Backend not responding' : 'No results'}
-                    </span>
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((market, idx) => (
-                  <MarketCard
-                    key={market.id}
-                    market={market}
-                    selected={false}
-                    onClick={handleSelectMarket}
-                    livePrice={livePrices[market.conditionId]}
-                    index={idx}
-                    sessionStatus={sessionStatus}
-                    placeOrder={placeOrder}
-                    eoaAddress={eoaAddress}
-                    safeAddress={safeAddress}
-                    onNeedOnboarding={handleNeedOnboarding}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <VirtualMarketList
+          filtered={filtered}
+          loading={loading}
+          markets={markets}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={handleSort}
+          onSelectMarket={handleSelectMarket}
+          sessionStatus={sessionStatus}
+          placeOrder={placeOrder}
+          eoaAddress={eoaAddress}
+          safeAddress={safeAddress}
+          onNeedOnboarding={handleNeedOnboarding}
+        />
       )}
     </div>
   );
 }
+
 
 function StatMetric({
   label,
