@@ -7,14 +7,13 @@ import { DashboardTab } from '@/components/dashboard/DashboardTab';
 import { PolymarketIntelligenceTab } from '@/components/intelligence/PolymarketIntelligenceTab';
 import { AutonomousBuilderTab } from '@/components/builder/AutonomousBuilderTab';
 import { ExecutingTradesTab } from '@/components/executing/ExecutingTradesTab';
-import { UsersTab } from '@/components/users/UsersTab';
 import { DataSourcesTab } from '@/components/data-sources/DataSourcesTab';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { useStrategies, useExecutingTrades } from '@/lib/store';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 
 const TAB_STORAGE_KEY = 'polymarket-active-tab';
-const VALID_TABS: TabId[] = ['Dashboard', 'Intelligence', 'Builder', 'Sources', 'Executing', 'Users'];
+const VALID_TABS: TabId[] = ['Dashboard', 'Intelligence', 'Builder', 'Sources', 'Executing'];
 
 function getPersistedTab(): TabId {
   if (typeof window === 'undefined') return 'Dashboard';
@@ -78,7 +77,6 @@ export default function Home() {
           />
         )}
         {tab === 'Sources' && <DataSourcesTab />}
-        {tab === 'Users' && <UsersTab />}
       </main>
     </div>
   );

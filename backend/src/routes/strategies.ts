@@ -51,6 +51,7 @@ router.post('/strategies', async (req, res) => {
       name:            strategy.name ?? 'Untitled',
       blocks:          strategy.blocks ?? [],
       is_active:       strategy.isActive ?? false,
+      runtime_status:  strategy.runtimeStatus ?? 'running',
       market_id:       strategy.marketId ?? null,
       market_question: strategy.marketQuestion ?? null,
       updated_at:      new Date().toISOString(),

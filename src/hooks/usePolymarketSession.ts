@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { createWalletClient, custom, type WalletClient } from 'viem';
+import { createWalletClient, custom, encodeFunctionData, createPublicClient, http, type WalletClient } from 'viem';
 import { polygon } from 'viem/chains';
 import { Side, OrderType } from '@polymarket/clob-client';
 import { RelayerTransactionState } from '@polymarket/builder-relayer-client';
@@ -42,6 +42,8 @@ export interface PolymarketSession {
   deploySafe: () => Promise<void>;
   approveTokens: () => Promise<void>;
   placeOrder: (params: PlaceOrderParams) => Promise<{ orderId: string } | null>;
+  /** Transfer USDC.e from the EOA (embedded wallet) to the Safe trading wallet. */
+  fundSafe: (amountUsdc: number) => Promise<string>;
   reset: () => void;
 }
 
@@ -245,12 +247,9 @@ export function usePolymarketSession(): PolymarketSession {
           // cleared localStorage, or key-creation failed last time).  Auto-recover silently.
           try {
             const l1Client = createClobClientL1(wc);
-            let recovered: ApiKeyCreds;
-            try {
-              recovered = await l1Client.deriveApiKey() as ApiKeyCreds;
-            } catch {
-              recovered = await l1Client.createApiKey() as ApiKeyCreds;
-            }
+            // createOrDeriveApiKey: tries createApiKey first; if the response has no key
+            // (key already exists on Polymarket's side), it falls back to deriveApiKey.
+            const recovered = await l1Client.createOrDeriveApiKey() as ApiKeyCreds;
             if (recovered?.key && recovered?.secret && recovered?.passphrase) {
               saveCredsLocal(eoa, recovered);
               await saveCredentials({
@@ -262,7 +261,7 @@ export function usePolymarketSession(): PolymarketSession {
                 safeDeployed: true,
                 tokensApproved: true,
               });
-              clobClientRef.current = createClobClient(wc, recovered);
+              clobClientRef.current = createClobClient(wc, recovered, safe);
               if (!cancelled) setStatus('ready');
               return;
             }
@@ -278,7 +277,7 @@ export function usePolymarketSession(): PolymarketSession {
           return;
         }
 
-        clobClientRef.current = createClobClient(wc, creds);
+        clobClientRef.current = createClobClient(wc, creds, safe);
         setStatus('ready');
       } catch (e) {
         if (!cancelled) {
@@ -362,12 +361,10 @@ export function usePolymarketSession(): PolymarketSession {
       // Create/derive API credentials and persist to DB + localStorage
       if (walletClientRef.current && eoaAddress) {
         const l1Client = createClobClientL1(walletClientRef.current);
-        let creds: ApiKeyCreds;
-        try {
-          creds = await l1Client.deriveApiKey() as ApiKeyCreds;
-        } catch {
-          creds = await l1Client.createApiKey() as ApiKeyCreds;
-        }
+        // createOrDeriveApiKey: tries createApiKey first; if Polymarket returns a
+        // response without a key (meaning a key already exists), it automatically
+        // falls back to deriveApiKey to retrieve the existing credentials.
+        const creds = await l1Client.createOrDeriveApiKey() as ApiKeyCreds;
 
         if (!creds.key || !creds.secret || !creds.passphrase) {
           throw new Error('Polymarket returned incomplete API credentials');
@@ -387,7 +384,7 @@ export function usePolymarketSession(): PolymarketSession {
           tokensApproved: true,
         });
 
-        clobClientRef.current = createClobClient(walletClientRef.current, creds);
+        clobClientRef.current = createClobClient(walletClientRef.current, creds, safeAddress);
       }
 
       setStatus('ready');
@@ -425,6 +422,42 @@ export function usePolymarketSession(): PolymarketSession {
     []
   );
 
+  const USDC_E = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174' as `0x${string}`;
+  const ALCHEMY_RPC = 'https://polygon-mainnet.g.alchemy.com/v2/cZH7r--ktRWyIH_1_qQZw';
+
+  const fundSafe = useCallback(async (amountUsdc: number): Promise<string> => {
+    if (!walletClientRef.current || !safeAddress || !eoaAddress) {
+      throw new Error('Wallet not ready — complete setup first');
+    }
+    if (amountUsdc <= 0) throw new Error('Amount must be greater than 0');
+
+    const amount = BigInt(Math.round(amountUsdc * 1_000_000)); // 6 decimals
+
+    const data = encodeFunctionData({
+      abi: [{
+        name: 'transfer',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }],
+        outputs: [{ name: '', type: 'bool' }],
+      }] as const,
+      functionName: 'transfer',
+      args: [safeAddress as `0x${string}`, amount],
+    });
+
+    const hash = await walletClientRef.current.sendTransaction({
+      to: USDC_E,
+      data,
+      account: eoaAddress as `0x${string}`,
+      chain: polygon,
+    });
+
+    // Wait for the tx to mine before returning so callers can refresh balances
+    const publicClient = createPublicClient({ chain: polygon, transport: http(ALCHEMY_RPC) });
+    await publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }, [safeAddress, eoaAddress]);
+
   const logout = useCallback(async () => {
     await privyLogout();
     setStatus('idle');
@@ -450,6 +483,7 @@ export function usePolymarketSession(): PolymarketSession {
     deploySafe,
     approveTokens,
     placeOrder,
+    fundSafe,
     reset,
   };
 }

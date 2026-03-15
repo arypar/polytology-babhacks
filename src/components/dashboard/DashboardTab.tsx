@@ -1,9 +1,10 @@
 'use client';
 
-import { RefreshCw, Wallet, TrendingUp, TrendingDown, BarChart2, ExternalLink, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Wallet, TrendingUp, TrendingDown, BarChart2, ExternalLink, ArrowRightLeft, AlertTriangle, ClipboardList } from 'lucide-react';
 import { usePolymarketSession } from '@/hooks/usePolymarketSession';
 import { useWalletBalance } from '@/hooks/useWalletBalance';
 import { usePositions, type PolymarketPosition } from '@/hooks/usePositions';
+import { useExecutingTrades } from '@/lib/store';
 
 // Uniswap swap link: native USDC → USDC.e on Polygon
 const BRIDGE_URL =
@@ -224,6 +225,38 @@ function BridgeBanner({ usdc }: { usdc: number }) {
   );
 }
 
+// ── Time helper ──────────────────────────────────────────────────────────────
+
+function timeAgo(ts: number): string {
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+// ── Order Row ────────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  const color =
+    s === 'filled'    ? '#22c55e' :
+    s === 'open'      ? '#3b82f6' :
+    s === 'cancelled' ? '#ef4444' : '#a3a3a3';
+  return (
+    <span
+      className="font-mono text-[10px] px-1.5 py-0.5 font-bold"
+      style={{
+        color,
+        backgroundColor: `${color}15`,
+        border: `1px solid ${color}35`,
+      }}
+    >
+      {status.toUpperCase()}
+    </span>
+  );
+}
+
 // ── Loading skeleton rows ────────────────────────────────────────────────────
 
 function SkeletonRows() {
@@ -263,6 +296,7 @@ export function DashboardTab({ onNavigateToIntelligence }: DashboardTabProps) {
   const needsConversion = usdc > 0 && usdce === 0;
 
   const { positions, loading: positionsLoading, error, refetch } = usePositions(safeAddress);
+  const { trades } = useExecutingTrades(eoaAddress, false);
 
   const isReady   = status === 'ready';
   const hasWallet = eoaAddress !== null;   // authenticated enough to show balances
@@ -443,6 +477,66 @@ export function DashboardTab({ onNavigateToIntelligence }: DashboardTabProps) {
           )}
         </div>
       </div>
+
+      {/* ── Recent Orders panel ───────────────────────────────────────────── */}
+      {isReady && trades.length > 0 && (
+        <div className="flex flex-col shrink-0 panel" style={{ maxHeight: 260 }}>
+          <div className="panel-header">
+            <ClipboardList className="h-3 w-3" style={{ color: 'var(--accent)' }} />
+            <span className="terminal-label">Recent Orders</span>
+          </div>
+          <div className="overflow-y-auto">
+            <table className="terminal-table">
+              <thead>
+                <tr>
+                  <th>Market</th>
+                  <th>Side</th>
+                  <th>Size</th>
+                  <th>Price</th>
+                  <th>Status</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trades.slice(0, 20).map((t) => (
+                  <tr key={t.id}>
+                    <td>
+                      <span
+                        className="truncate text-[12px] font-medium block max-w-[280px]"
+                        style={{ color: 'var(--text)' }}
+                        title={t.marketQuestion}
+                      >
+                        {t.marketQuestion || t.marketId.slice(0, 16) + '…'}
+                      </span>
+                    </td>
+                    <td>
+                      <OutcomeBadge outcome={t.side} />
+                    </td>
+                    <td>
+                      <span className="metric text-[12px]" style={{ color: 'var(--text)' }}>
+                        {fmt$(t.shares)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="metric text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+                        {Math.round(t.entryPrice * 100)}¢
+                      </span>
+                    </td>
+                    <td>
+                      <StatusBadge status={t.status} />
+                    </td>
+                    <td>
+                      <span className="font-mono text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {timeAgo(t.timestamp)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ── Footer note ───────────────────────────────────────────────────── */}
       {positions.length > 0 && (

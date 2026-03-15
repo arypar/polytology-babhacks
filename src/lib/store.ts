@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type {
   AutonomousStrategy,
   StrategyBlock,
@@ -128,7 +128,12 @@ export function useStrategies(eoaAddress?: string | null) {
       cacheStrategies(eoa, next);
       return next;
     });
-    apiPost('/api/strategies', { ...strategy, eoaAddress: eoa });
+    apiPost('/api/strategies', {
+      ...strategy,
+      eoaAddress: eoa,
+      isActive: strategy.enabled,
+      runtimeStatus: strategy.runtimeStatus ?? 'running',
+    });
   }, [eoa]);
 
   const updateStrategy = useCallback((id: string, updates: Partial<AutonomousStrategy>) => {
@@ -248,6 +253,16 @@ export function useExecutingTrades(eoaAddress?: string | null, isActive = true) 
   const [trades, setTrades] = useState<ExecutingTrade[]>([]);
   const [runtimes, setRuntimes] = useState<StrategyRuntime[]>([]);
   const [usingRealData, setUsingRealData] = useState(false);
+  const [fetchTick, setFetchTick] = useState(0);
+  const prevIsActiveRef = useRef(isActive);
+
+  // Re-fetch when the Executing tab becomes active (false → true transition)
+  useEffect(() => {
+    if (isActive && !prevIsActiveRef.current) {
+      setFetchTick(t => t + 1);
+    }
+    prevIsActiveRef.current = isActive;
+  }, [isActive]);
 
   // Fetch real strategies + trades when we have an EOA address
   useEffect(() => {
@@ -277,7 +292,7 @@ export function useExecutingTrades(eoaAddress?: string | null, isActive = true) 
     })();
 
     return () => { cancelled = true; };
-  }, [eoa]);
+  }, [eoa, fetchTick]);
 
   // Live price simulation — only runs when the Executing tab is visible
   useEffect(() => {

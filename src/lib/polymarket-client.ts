@@ -1,14 +1,21 @@
-import { ClobClient, type ApiKeyCreds, Side } from '@polymarket/clob-client';
+import { ClobClient, type ApiKeyCreds, Side, SignatureType } from '@polymarket/clob-client';
 import { RelayClient } from '@polymarket/builder-relayer-client';
 import { BuilderConfig } from '@polymarket/builder-signing-sdk';
 import type { WalletClient } from 'viem';
 
-export { Side };
+export { Side, SignatureType };
 export type { ApiKeyCreds };
 
 export const POLYGON_CHAIN_ID = 137;
 export const CLOB_API_URL = 'https://clob.polymarket.com';
 export const RELAYER_URL = 'https://relayer-v2.polymarket.com';
+
+// In the browser, POST requests to clob.polymarket.com are blocked by CORS
+// preflight. Route all CLOB client traffic through our Next.js proxy instead.
+function getClobUrl(): string {
+  if (typeof window === 'undefined') return CLOB_API_URL;
+  return `${window.location.origin}/api/clob`;
+}
 
 // Proxy URL: relay client requests are routed through our Next.js API to avoid
 // CORS issues when calling the relayer directly from the browser.
@@ -40,14 +47,17 @@ function makeBuilderConfig(): BuilderConfig {
 
 /**
  * Creates a ClobClient with Level 2 auth (API key creds).
- * Uses a viem WalletClient as the signer.
+ * When safeAddress is provided the client uses POLY_PROXY signature type so
+ * the Safe is the on-chain maker/funder while the EOA wallet signs the orders.
  */
 export function createClobClient(
   walletClient: WalletClient,
-  creds: ApiKeyCreds
+  creds: ApiKeyCreds,
+  safeAddress?: string | null
 ): ClobClient {
+  const sigType = safeAddress ? SignatureType.POLY_PROXY : SignatureType.EOA;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new ClobClient(CLOB_API_URL, POLYGON_CHAIN_ID, walletClient as any, creds);
+  return new ClobClient(getClobUrl(), POLYGON_CHAIN_ID, walletClient as any, creds, sigType, safeAddress ?? undefined);
 }
 
 /**
@@ -55,7 +65,7 @@ export function createClobClient(
  */
 export function createClobClientL1(walletClient: WalletClient): ClobClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new ClobClient(CLOB_API_URL, POLYGON_CHAIN_ID, walletClient as any);
+  return new ClobClient(getClobUrl(), POLYGON_CHAIN_ID, walletClient as any);
 }
 
 /**
